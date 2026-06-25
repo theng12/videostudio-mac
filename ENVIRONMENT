@@ -1,0 +1,29 @@
+##########################################################################
+# HF_HOME
+# Huggingface cache for downloaded model weights.
+# Living inside the launcher folder so resets clean it up cleanly.
+##########################################################################
+HF_HOME=./cache/HF_HOME
+
+##########################################################################
+# PINOKIO_SHARE_LOCAL
+# Set to true to expose the API on your LAN so other Macs can call it.
+# Useful when this machine is acting as the render server.
+##########################################################################
+PINOKIO_SHARE_LOCAL=false
+
+##########################################################################
+# PINOKIO_SHARE_LOCAL_PORT
+# Optional fixed port for the LAN proxy. Leave blank for random.
+##########################################################################
+PINOKIO_SHARE_LOCAL_PORT=
+
+##########################################################################
+# VIDEOSTUDIO_EXTRA_MODEL_DIRS
+# Colon-separated absolute paths the importer will scan when you click
+# "Import local weights". Each path should be a folder that contains
+# HF-cache-style 'models--owner--repo' subdirectories.
+# Example: /Users/me/old-flux-cache:/Volumes/External/hf
+# Leave empty if you don't need to import from external caches.
+##########################################################################
+VIDEOSTUDIO_EXTRA_MODEL_DIRS=

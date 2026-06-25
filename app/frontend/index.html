@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Studio KH</title>
+  <link rel="stylesheet" href="/assets/style.css?v=v1" />
+  <!-- Order matters: app.js defines the global studio() that Alpine's x-data
+       calls, so it must load before alpine.min.js. prompts.js seeds samples. -->
+  <script defer src="/assets/prompts.js?v=v1"></script>
+  <script defer src="/assets/app.js?v=v1"></script>
+  <script defer src="/assets/alpine.min.js?v=v1"></script>
+</head>
+<body x-data="studio()" x-init="init()">
+
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-mark" src="/assets/icon.png?v=v1" alt="Video Studio" />
+      <div>
+        <div class="brand-title">Video Studio <span class="kh">KH</span></div>
+        <div class="brand-sub">text-to-video &amp; video-to-video · Apple Silicon · Diffusers</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="health" :class="health.ok ? 'ok' : 'bad'" :title="health.ok ? 'server up' : 'server down'"></span>
+      <span class="device-chip" x-show="diag.device" x-text="'device: ' + diag.device"></span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button :class="{active: tab==='generate'}" @click="tab='generate'">Generate</button>
+    <button :class="{active: tab==='models'}" @click="tab='models'">Models</button>
+    <button :class="{active: tab==='downloads'}" @click="tab='downloads'">
+      Downloads <span class="badge" x-show="activeDownloads.length" x-text="activeDownloads.length"></span>
+    </button>
+    <button :class="{active: tab==='settings'}" @click="tab='settings'">Settings</button>
+  </nav>
+
+  <main>
+
+    <!-- ─────────────── GENERATE ─────────────── -->
+    <section x-show="tab==='generate'" class="pane">
+
+      <!-- engine-not-installed banner -->
+      <div class="banner warn" x-show="!gen.available">
+        <strong>Video engine not installed.</strong>
+        Click <em>Install Generation</em> in the Pinokio sidebar to install PyTorch + Diffusers,
+        then reload. You can still browse Models and start downloads now.
+      </div>
+
+      <!-- no cached models -->
+      <div class="banner info" x-show="gen.available && cachedModels.length === 0">
+        No models downloaded yet. Go to the <a href="#" @click.prevent="tab='models'">Models</a> tab
+        and download one (e.g. <strong>LTX-Video</strong> — the lightest) before generating.
+      </div>
+
+      <div class="gen-grid" x-show="gen.available && cachedModels.length > 0">
+        <!-- left: controls -->
+        <div class="gen-controls card">
+          <label class="field">
+            <span>Model</span>
+            <select x-model="gen.repo" @change="onModelChange()">
+              <template x-for="m in cachedModels" :key="m.repo">
+                <option :value="m.repo" x-text="m.label"></option>
+              </template>
+            </select>
+          </label>
+
+          <div class="field">
+            <span>Mode</span>
+            <div class="seg">
+              <template x-for="cap in selectedCapabilities" :key="cap">
+                <button type="button" :class="{active: gen.mode===cap}" @click="gen.mode=cap"
+                        x-text="modeLabel(cap)"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- input file for img2video / video2video -->
+          <div class="field" x-show="gen.mode !== 'txt2video'">
+            <span x-text="gen.mode === 'img2video' ? 'Input image' : 'Input video'"></span>
+            <input type="file" :accept="gen.mode === 'img2video' ? 'image/*' : 'video/*'"
+                   @change="onFile($event)" />
+            <div class="preview" x-show="gen.inputUrl">
+              <template x-if="gen.mode === 'img2video'">
+                <img :src="gen.inputUrl" alt="input" />
+              </template>
+              <template x-if="gen.mode === 'video2video'">
+                <video :src="gen.inputUrl" muted loop autoplay playsinline></video>
+              </template>
+              <span class="preview-name" x-text="gen.inputName"></span>
+            </div>
+          </div>
+
+          <label class="field">
+            <span>Prompt</span>
+            <textarea x-model="gen.prompt" rows="4"
+                      placeholder="A cinematic shot of…"></textarea>
+            <button class="link-btn" type="button" @click="randomPrompt()">🎲 random sample</button>
+          </label>
+
+          <label class="field">
+            <span>Negative prompt <small>(optional)</small></span>
+            <textarea x-model="gen.negativePrompt" rows="2"
+                      placeholder="blurry, low quality, distorted"></textarea>
+          </label>
+
+          <div class="grid2">
+            <label class="field"><span>Frames</span>
+              <input type="number" x-model.number="gen.frames" min="9" step="8" /></label>
+            <label class="field"><span>FPS</span>
+              <input type="number" x-model.number="gen.fps" min="1" max="60" /></label>
+            <label class="field"><span>Steps</span>
+              <input type="number" x-model.number="gen.steps" min="1" max="100" /></label>
+            <label class="field"><span>Guidance</span>
+              <input type="number" x-model.number="gen.guidance" step="0.5" min="0" /></label>
+            <label class="field" x-show="gen.mode !== 'video2video'"><span>Width</span>
+              <input type="number" x-model.number="gen.width" step="16" /></label>
+            <label class="field" x-show="gen.mode !== 'video2video'"><span>Height</span>
+              <input type="number" x-model.number="gen.height" step="16" /></label>
+            <label class="field"><span>Seed <small>(-1 = random)</small></span>
+              <input type="number" x-model.number="gen.seed" /></label>
+            <label class="field" x-show="gen.mode === 'video2video'"><span>Strength</span>
+              <input type="number" x-model.number="gen.strength" step="0.05" min="0" max="1" /></label>
+          </div>
+
+          <button class="primary big" :disabled="gen.submitting || !gen.prompt.trim()"
+                  @click="submitGenerate()">
+            <span x-show="!gen.submitting">Generate video</span>
+            <span x-show="gen.submitting">Submitting…</span>
+          </button>
+          <p class="hint" x-text="frameHint()"></p>
+        </div>
+
+        <!-- right: outputs -->
+        <div class="gen-output">
+          <div class="output-head">
+            <h3>Outputs</h3>
+            <button class="link-btn" @click="clearHistory()" x-show="genJobs.length">clear history</button>
+          </div>
+          <div class="empty" x-show="genJobs.length === 0">
+            Generated clips appear here. The first run downloads nothing extra but
+            loads the model into memory — expect a wait.
+          </div>
+          <template x-for="j in genJobs" :key="j.id">
+            <div class="job card">
+              <div class="job-top">
+                <span class="pill" :class="j.state" x-text="j.state"></span>
+                <span class="mode-tag" x-text="j.mode"></span>
+                <span class="spacer"></span>
+                <button class="link-btn" x-show="j.state==='running' || j.state==='queued'"
+                        @click="cancelJob(j.id)">cancel</button>
+              </div>
+              <div class="job-prompt" x-text="j.params?.prompt || '(no prompt)'"></div>
+
+              <div class="progress" x-show="j.state==='running' || j.state==='queued'">
+                <div class="bar" :style="`width:${Math.round((j.progress||0)*100)}%`"></div>
+                <span class="progress-label"
+                      x-text="`step ${j.current_step}/${j.total_steps}`"></span>
+              </div>
+
+              <video x-show="j.state==='done' && j.output_url" controls loop
+                     :src="j.output_url + '?t=' + j.id"></video>
+
+              <div class="job-err" x-show="j.state==='error'" x-text="j.error"></div>
+
+              <div class="job-meta" x-show="j.state==='done'">
+                <span x-show="j.resolved_seed != null" x-text="'seed ' + j.resolved_seed"></span>
+                <span x-show="j.duration_seconds != null"
+                      x-text="Math.round(j.duration_seconds) + 's'"></span>
+                <a class="link-accent" :href="j.output_url" :download="j.id + '.mp4'">download</a>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- diagnostics -->
+      <details class="diag card" x-show="diag.packages.length">
+        <summary>Engine diagnostics <small x-text="`(${diag.ready_count}/${diag.total_engines} engines ready)`"></small></summary>
+        <ul class="diag-list">
+          <template x-for="p in diag.packages" :key="p.package">
+            <li :class="p.installed ? 'ok' : 'missing'">
+              <span x-text="p.installed ? '✓' : '✗'"></span>
+              <strong x-text="p.package"></strong>
+              <small x-text="p.role"></small>
+              <em x-show="p.version" x-text="p.version"></em>
+            </li>
+          </template>
+        </ul>
+      </details>
+    </section>
+
+    <!-- ─────────────── MODELS ─────────────── -->
+    <section x-show="tab==='models'" class="pane">
+      <template x-for="fam in familyList" :key="fam.id">
+        <div class="family">
+          <div class="family-head">
+            <h3 x-text="fam.label"></h3>
+            <p x-text="fam.summary"></p>
+            <p class="how" x-text="fam.how_to_use"></p>
+          </div>
+          <div class="model-cards">
+            <template x-for="m in modelsByFamily(fam.id)" :key="m.repo">
+              <div class="model-card card">
+                <div class="mc-head">
+                  <strong x-text="m.label"></strong>
+                  <span class="cache" :class="m.cache.state" x-text="m.cache.state"></span>
+                </div>
+                <div class="mc-meta">
+                  <span x-text="m.size_gb + ' GB'"></span>
+                  <span x-text="'≥ ' + m.min_unified_memory_gb + ' GB RAM'"></span>
+                  <span x-show="m.gated" class="gated">gated</span>
+                </div>
+                <div class="caps">
+                  <template x-for="c in m.capabilities" :key="c">
+                    <span class="cap" x-text="modeLabel(c)"></span>
+                  </template>
+                </div>
+                <p class="best-for" x-text="m.best_for"></p>
+                <ul class="use-cases">
+                  <template x-for="u in m.use_cases" :key="u.text">
+                    <li :class="u.kind">
+                      <span x-text="u.kind==='good' ? '✅' : (u.kind==='weak' ? '⚠️' : '❌')"></span>
+                      <span x-text="u.text"></span>
+                    </li>
+                  </template>
+                </ul>
+
+                <div class="dl-progress" x-show="m.active_download">
+                  <div class="progress">
+                    <div class="bar" :style="`width:${Math.round(m.active_download?.percent||0)}%`"></div>
+                  </div>
+                  <small x-text="`${Math.round(m.active_download?.percent||0)}% · ${fmtBytes(m.active_download?.bytes_done)} / ${fmtBytes(m.active_download?.bytes_total)}`"></small>
+                </div>
+
+                <div class="mc-actions">
+                  <button class="primary" x-show="m.cache.state!=='cached' && !m.active_download"
+                          @click="startDownload(m.repo)">Download</button>
+                  <button class="ghost" x-show="m.active_download"
+                          @click="cancelDownload(m.active_download.id)">Cancel</button>
+                  <button class="ghost" x-show="m.cache.state==='cached'"
+                          @click="useInGenerate(m.repo)">Use in Generate</button>
+                  <span class="mc-hint" x-show="m.gated && m.cache.state!=='cached'">needs HF token →&nbsp;Settings</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </section>
+
+    <!-- ─────────────── DOWNLOADS ─────────────── -->
+    <section x-show="tab==='downloads'" class="pane">
+      <div class="output-head">
+        <h3>Downloads</h3>
+        <button class="link-btn" @click="clearDownloads()" x-show="downloads.length">clear finished</button>
+      </div>
+      <div class="empty" x-show="downloads.length === 0">No downloads yet.</div>
+      <template x-for="d in downloads" :key="d.id">
+        <div class="dl card">
+          <div class="job-top">
+            <span class="pill" :class="d.state" x-text="d.state"></span>
+            <strong x-text="d.repo"></strong>
+            <span class="spacer"></span>
+            <button class="link-btn" x-show="d.state==='running' || d.state==='queued'"
+                    @click="cancelDownload(d.id)">cancel</button>
+          </div>
+          <div class="progress" x-show="d.state==='running' || d.state==='queued'">
+            <div class="bar" :style="`width:${Math.round(d.percent||0)}%`"></div>
+          </div>
+          <small x-text="`${Math.round(d.percent||0)}% · ${fmtBytes(d.bytes_done)} / ${fmtBytes(d.bytes_total)} · ${fmtBytes(d.speed_bps)}/s`"></small>
+          <div class="job-err" x-show="d.state==='error'" x-text="d.error"></div>
+        </div>
+      </template>
+    </section>
+
+    <!-- ─────────────── SETTINGS ─────────────── -->
+    <section x-show="tab==='settings'" class="pane">
+      <div class="card settings-card">
+        <h3>Hugging Face token</h3>
+        <p class="hint">Needed only for gated repos. Stored locally on this machine.</p>
+        <div class="token-row">
+          <input :type="settings.showToken ? 'text' : 'password'" x-model="settings.tokenInput"
+                 placeholder="hf_…" />
+          <button class="ghost" @click="settings.showToken=!settings.showToken"
+                  x-text="settings.showToken ? 'hide' : 'show'"></button>
+        </div>
+        <div class="settings-actions">
+          <button class="primary" @click="saveToken()" :disabled="settings.busy">Save</button>
+          <button class="ghost" @click="testToken()" :disabled="settings.busy">Test</button>
+          <span class="settings-msg" :class="settings.messageKind" x-text="settings.message"></span>
+        </div>
+        <p class="hint" x-show="settings.hf_token_set">A token is currently saved (<span x-text="settings.hf_token_masked"></span>).</p>
+      </div>
+
+      <div class="card settings-card">
+        <h3>API</h3>
+        <p class="hint">This server exposes a REST API. See the README for JavaScript / Python / curl examples.</p>
+        <p>
+          <a class="link-accent" :href="apiBase + '/docs'" target="_blank">Swagger UI</a> ·
+          <a class="link-accent" :href="apiBase + '/redoc'" target="_blank">ReDoc</a>
+        </p>
+        <p class="hint" x-show="conn.bind_port">Reachable on this machine at <code x-text="'http://localhost:' + conn.bind_port"></code>.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- toasts -->
+  <div class="toasts">
+    <template x-for="t in toasts" :key="t.id">
+      <div class="toast" :class="t.kind" x-text="t.text"></div>
+    </template>
+  </div>
+
+</body>
+</html>

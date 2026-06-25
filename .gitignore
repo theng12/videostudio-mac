@@ -1,0 +1,23 @@
+conda_env/
+cache/
+logs/
+app/output/
+app/uploads/
+app/__pycache__/
+app/backend/__pycache__/
+app/backend/settings.json
+*.pyc
+.DS_Store
+
+# AI assistant rules (local-only, contain absolute paths)
+.clinerules
+.cursorrules
+.windsurfrules
+.geminiignore
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+QWEN.md
+
+# Per-machine launchd startup-service marker (install_service.sh)
+service/
