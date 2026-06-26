@@ -178,3 +178,68 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .toast.error { border-color: var(--bad); }
 .toast.success { border-color: var(--good); }
 .toast.info { border-color: var(--accent); }
+
+/* ─────────────── Models tab: planner / filters / rich cards ─────────────── */
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.ghost.small { padding: 5px 10px; font-size: 12px; }
+
+/* generic chips (Models tab) */
+.chip { font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; color: var(--text); cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--accent); }
+.chip.active { background: var(--accent); border-color: var(--accent); color: #061021; font-weight: 600; }
+.chip.ok, .chip.fit-ok, .chip.engine-ready { color: var(--good); border-color: var(--good); }
+.chip.warn, .chip.fit-tight, .chip.engine-missing { color: var(--warn); border-color: var(--warn); }
+.chip.fit-risky { color: var(--bad); border-color: var(--bad); }
+.chip.fit-unknown { color: var(--muted); }
+
+/* RAM planner */
+.ram-planner { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.ram-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.ram-icon { font-size: 18px; }
+.ram-pill { background: var(--panel-2); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; }
+.ram-pill.preview { border-color: var(--accent-2); color: var(--accent); }
+.ram-slider-row { display: flex; align-items: center; gap: 12px; }
+.ram-slider { flex: 1; accent-color: var(--accent); }
+.ram-entry { display: flex; align-items: center; gap: 6px; }
+.ram-entry input { width: 88px; }
+.ram-tiers { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* best picks */
+.best-picks { margin-bottom: 16px; }
+.best-picks-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.best-picks-head h3 { margin: 0; }
+.best-picks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.best-pick { cursor: pointer; display: flex; flex-direction: column; gap: 6px; transition: border-color .15s; }
+.best-pick:hover { border-color: var(--accent); }
+.best-pick .lane { font-size: 12px; color: var(--muted); }
+.best-pick .pick-model { font-weight: 600; }
+.best-pick .pick-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* library toolbar */
+.library-toolbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.toolbar-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.library-search { flex: 1; min-width: 220px; }
+.library-sort { width: auto; }
+.toolbar-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chips-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.filter-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); min-width: 72px; }
+.seg.fit-seg button { font-size: 12px; }
+
+/* empty state */
+.library-empty { text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.empty-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: center; }
+
+/* family + rich cards */
+.family-head { display: flex; gap: 10px; align-items: flex-start; }
+.family-collapse { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; line-height: 1.2; }
+.how-details { margin: 8px 0; font-size: 13px; color: var(--muted); }
+.how-details summary { cursor: pointer; }
+.model-card .repo { font-size: 11px; color: var(--muted); background: var(--panel-2); padding: 2px 6px; border-radius: 6px; align-self: flex-start; word-break: break-all; }
+.model-card.absent { opacity: .82; }
+.size-big { font-weight: 700; }
+.hw { margin: 2px 0; }
+.model-details { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+.details-toggle { align-self: flex-start; }
+.saved-loc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.saved-loc code { word-break: break-all; }
