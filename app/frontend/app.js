@@ -479,14 +479,18 @@ function studio() {
     },
 
     // ──────── formatters / chip helpers ────────
+    // Decimal (SI, ÷/×1000) — NOT binary ÷1024. Must match the catalog's static
+    // `size_gb` values (HF's decimal byte counts) and downloads.py's own `/1e9`
+    // log line, or the same repo shows two different "GB" numbers: one static
+    // on the model card, one live while downloading (same bug class fixed in
+    // Voice Studio KH v1.7.2/v1.7.3).
     fmtBytes(n) {
       n = Number(n) || 0;
-      if (n < 1024) return n + " B";
-      const u = ["KB", "MB", "GB", "TB"]; let i = -1;
-      do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
-      return n.toFixed(1) + " " + u[i];
+      const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+      while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+      return n.toFixed(n < 10 ? 2 : 1) + " " + u[i];
     },
-    formatGb(gb) { gb = Number(gb) || 0; return gb < 1 ? Math.round(gb * 1024) + " MB" : gb.toFixed(1) + " GB"; },
+    formatGb(gb) { gb = Number(gb) || 0; return gb < 1 ? Math.round(gb * 1000) + " MB" : gb.toFixed(1) + " GB"; },
     cacheChipLabel(s) { return { cached: "cached", partial: "partial", absent: "not downloaded" }[s] || s; },
     cacheChipClass(s) { return { cached: "ok", partial: "warn", absent: "" }[s] || ""; },
     chipExplain(s) {
