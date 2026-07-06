@@ -25,6 +25,8 @@ from typing import Optional
 class Family:
     id: str
     label: str
+    monogram: str
+    accent: str
     summary: str
     how_to_use: str
 
@@ -33,6 +35,8 @@ FAMILIES: dict[str, Family] = {
     "ltx-video": Family(
         id="ltx-video",
         label="LTX-Video",
+        monogram="LTX",
+        accent="#59d6c7",
         summary=(
             "Lightricks' LTX-Video — a DiT video model tuned for speed. The "
             "lightest, fastest option here and the best Apple Silicon starting "
@@ -47,6 +51,8 @@ FAMILIES: dict[str, Family] = {
     "wan22": Family(
         id="wan22",
         label="Wan 2.2",
+        monogram="W22",
+        accent="#6ea8ff",
         summary=(
             "Alibaba's Wan 2.2 family. The TI2V-5B variant is a single model that "
             "does both text-to-video and image-to-video at 720p and is the "
@@ -62,6 +68,8 @@ FAMILIES: dict[str, Family] = {
     "hunyuanvideo": Family(
         id="hunyuanvideo",
         label="HunyuanVideo",
+        monogram="HY",
+        accent="#f0a76f",
         summary=(
             "Tencent's HunyuanVideo — a ~13B DiT with excellent motion and "
             "prompt adherence. Large and slow, but among the best open "
@@ -76,6 +84,8 @@ FAMILIES: dict[str, Family] = {
     "cogvideox": Family(
         id="cogvideox",
         label="CogVideoX",
+        monogram="CGX",
+        accent="#c69cff",
         summary=(
             "THUDM's CogVideoX — mature diffusers support with the broadest mode "
             "coverage: text-to-video, image-to-video, AND a dedicated "
@@ -105,6 +115,8 @@ class ModelEntry:
     repo: str
     label: str
     family: str
+    variant_label: str
+    role: str
     size_gb: float          # approximate full-precision download size
     gated: bool
     min_unified_memory_gb: int = 16
@@ -135,6 +147,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="Lightricks/LTX-Video",
         label="LTX-Video 2B (t2v + i2v)",
         family="ltx-video",
+        variant_label="2B Standard",
+        role="Best starting point",
         size_gb=19.0,
         gated=False,
         min_unified_memory_gb=24,
@@ -153,6 +167,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="Lightricks/LTX-Video-0.9.7-distilled",
         label="LTX-Video 0.9.7 distilled (fast)",
         family="ltx-video",
+        variant_label="0.9.7 Distilled",
+        role="Fast drafts",
         size_gb=19.0,
         gated=False,
         min_unified_memory_gb=24,
@@ -171,6 +187,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
         label="Wan 2.2 TI2V-5B (t2v + i2v, 720p)",
         family="wan22",
+        variant_label="TI2V-5B",
+        role="Practical 720p",
         size_gb=20.0,
         gated=False,
         min_unified_memory_gb=32,
@@ -188,6 +206,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         label="Wan 2.2 T2V-A14B (MoE, high quality)",
         family="wan22",
+        variant_label="T2V-A14B",
+        role="Highest text quality",
         size_gb=62.0,
         gated=False,
         min_unified_memory_gb=128,
@@ -204,6 +224,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         label="Wan 2.2 I2V-A14B (image-to-video, MoE)",
         family="wan22",
+        variant_label="I2V-A14B",
+        role="Highest image quality",
         size_gb=62.0,
         gated=False,
         min_unified_memory_gb=128,
@@ -222,6 +244,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="hunyuanvideo-community/HunyuanVideo",
         label="HunyuanVideo (t2v, ~13B)",
         family="hunyuanvideo",
+        variant_label="13B Text-to-Video",
+        role="Cinematic motion",
         size_gb=40.0,
         gated=False,
         min_unified_memory_gb=64,
@@ -239,6 +263,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="hunyuanvideo-community/HunyuanVideo-I2V",
         label="HunyuanVideo-I2V (image-to-video)",
         family="hunyuanvideo",
+        variant_label="13B Image-to-Video",
+        role="High-fidelity animation",
         size_gb=40.0,
         gated=False,
         min_unified_memory_gb=64,
@@ -257,6 +283,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="THUDM/CogVideoX-2b",
         label="CogVideoX-2B (t2v + v2v, light)",
         family="cogvideox",
+        variant_label="2B",
+        role="Light video-to-video",
         size_gb=12.0,
         gated=False,
         min_unified_memory_gb=16,
@@ -274,6 +302,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="THUDM/CogVideoX-5b",
         label="CogVideoX-5B (t2v + v2v)",
         family="cogvideox",
+        variant_label="5B",
+        role="Balanced quality",
         size_gb=22.0,
         gated=False,
         min_unified_memory_gb=32,
@@ -291,6 +321,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         repo="THUDM/CogVideoX-5b-I2V",
         label="CogVideoX-5B-I2V (image-to-video)",
         family="cogvideox",
+        variant_label="5B I2V",
+        role="Animate stills",
         size_gb=22.0,
         gated=False,
         min_unified_memory_gb=32,
@@ -326,6 +358,8 @@ def serialize_model(m: ModelEntry) -> dict:
         "label": m.label,
         "family": m.family,
         "family_label": FAMILIES[m.family].label,
+        "variant_label": m.variant_label,
+        "role": m.role,
         "size_gb": m.size_gb,
         "gated": m.gated,
         "quantization": m.quantization,
@@ -346,6 +380,8 @@ def serialize_family(f: Family) -> dict:
     return {
         "id": f.id,
         "label": f.label,
+        "monogram": f.monogram,
+        "accent": f.accent,
         "summary": f.summary,
         "how_to_use": f.how_to_use,
     }

@@ -23,6 +23,7 @@ function studio() {
     ramGb: 0,
     ramIsDetected: false,
     ramTiers: [16, 32, 64, 128, 256, 512],
+    advancedFiltersOpen: false,
 
     gen: {
       available: false,
@@ -109,6 +110,7 @@ function studio() {
         const data = await (await fetch("/api/catalog")).json();
         this.families = data.families || {};
         this.models = data.models || [];
+        this._initFamilyLibrary();
         this._syncDownloadsToModels();
         if (!this.gen.repo && this.cachedModels.length) {
           this.gen.repo = this.cachedModels[0].repo;
@@ -265,7 +267,9 @@ function studio() {
           if (f.fitLevel === "over" && st !== "risky") return false;
         }
         if (q) {
-          const hay = ((m.label || "") + " " + (m.repo || "") + " " + (m.best_for || "")).toLowerCase();
+          const useCases = (m.use_cases || []).map((item) => item.text || "").join(" ");
+          const hay = [m.label, m.variant_label, m.role, m.repo, m.family_label, m.best_for, useCases]
+            .filter(Boolean).join(" ").toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -299,6 +303,22 @@ function studio() {
     },
     get filteredModelTotalCount() {
       return Object.values(this.filteredModelsByFamily).reduce((s, l) => s + l.length, 0);
+    },
+    get visibleFamilyGroups() {
+      return this.familiesWithResults().map((family) => {
+        const models = this.filteredModelsByFamily[family.id] || [];
+        const capabilities = Array.from(new Set(models.flatMap((m) => m.capabilities || [])));
+        return {
+          ...family,
+          models,
+          capabilities,
+          cachedCount: models.filter((m) => m.cache?.state === "cached").length,
+          minRam: Math.min(...models.map((m) => Number(m.min_unified_memory_gb) || 0)),
+          maxRam: Math.max(...models.map((m) => Number(m.min_unified_memory_gb) || 0)),
+          minSize: Math.min(...models.map((m) => Number(m.size_gb) || 0)),
+          maxSize: Math.max(...models.map((m) => Number(m.size_gb) || 0)),
+        };
+      });
     },
     get hasActiveFilters() {
       const f = this.modelFilters;
@@ -347,8 +367,66 @@ function studio() {
       this.modelFilters.expandedRepos = s;
     },
     collapseAllVisible() { this.modelFilters.expandedRepos = new Set(); },
-    isFamilyCollapsed(id) { return this.modelFilters.collapsedFamilies.has(id); },
+    _initFamilyLibrary() {
+      if (this.modelFilters.collapsedFamilies.size || !this.models.length) return;
+      const cached = this.models.find((m) => m.cache?.state === "cached");
+      const firstFamily = cached?.family || (this.families["ltx-video"] ? "ltx-video" : this.models[0].family);
+      this.modelFilters.collapsedFamilies = new Set(
+        Object.keys(this.families).filter((id) => id !== firstFamily),
+      );
+    },
+    isFamilyCollapsed(id) {
+      if (this.modelFilters.search.trim() || this.modelFilters.families.has(id)) return false;
+      return this.modelFilters.collapsedFamilies.has(id);
+    },
     toggleFamilyCollapsed(id) { const s = this.modelFilters.collapsedFamilies; s.has(id) ? s.delete(id) : s.add(id); this.modelFilters.collapsedFamilies = new Set(s); },
+
+    // Family-first Models tab presentation. All values are derived from the
+    // catalog contract so adding a model automatically updates comparisons.
+    familyStyle(family) { return `--family-accent: ${family.accent || "#59d6c7"}`; },
+    familyModeSummary(family) {
+      return (family.capabilities || []).map((c) => this.shortCapabilityLabel(c)).join(" · ");
+    },
+    familyRamSummary(family) {
+      return family.minRam === family.maxRam ? `${family.minRam} GB+` : `${family.minRam}–${family.maxRam} GB`;
+    },
+    familySizeSummary(family) {
+      return family.minSize === family.maxSize
+        ? this.formatGb(family.minSize)
+        : `${this.formatGb(family.minSize)}–${this.formatGb(family.maxSize)}`;
+    },
+    familyResolutionSummary(family) {
+      const values = Array.from(new Set((family.models || []).map((m) => this.modelResolution(m))));
+      return values.join(" · ");
+    },
+    familyDurationSummary(family) {
+      const values = (family.models || []).map((m) => this.modelDurationSeconds(m)).filter((v) => v > 0);
+      if (!values.length) return "—";
+      const min = Math.min(...values); const max = Math.max(...values);
+      return min === max ? this.formatDuration(min) : `${this.formatDuration(min)}–${this.formatDuration(max)}`;
+    },
+    modelResolution(model) {
+      const d = model.video_defaults || {};
+      return d.width && d.height ? `${d.width}×${d.height}` : "Custom";
+    },
+    modelDurationSeconds(model) {
+      const d = model.video_defaults || {};
+      return d.frames && d.fps ? Number(d.frames) / Number(d.fps) : 0;
+    },
+    formatDuration(seconds) {
+      return seconds >= 10 ? `${Math.round(seconds)} sec` : `${seconds.toFixed(1)} sec`;
+    },
+    modelClipProfile(model) {
+      const d = model.video_defaults || {};
+      return `${this.formatDuration(this.modelDurationSeconds(model))} · ${d.frames || "—"} frames · ${d.fps || "—"} fps`;
+    },
+    modelRuntimeLabel() { return "PyTorch · MPS"; },
+    modelRowClass(model) {
+      return [model.cache?.state || "absent", this.isModelReady(model.repo) ? "ready" : ""].filter(Boolean).join(" ");
+    },
+    shortCapabilityLabel(c) {
+      return { txt2video: "Text", img2video: "Image", video2video: "Video" }[c] || c;
+    },
 
     // engine readiness (from diagnostics)
     modelEngine(repo) {
