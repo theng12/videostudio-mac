@@ -10,6 +10,20 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.1.2] — 2026-07-08
+
+### Fixed — Start now refuses to compete with startup service mode
+
+The startup service owns port `47872` when installed, and the service-mode sidebar hides the normal Start button. But `start.js` itself still had no direct guard, so any stale menu, direct script launch, or automation path could still try to start a second Uvicorn server on the same fixed port and fail with "address already in use."
+
+`start.js` now checks for `service/.installed` before launching the server. If service mode is active, it exits immediately with a clear message telling the user to use **Open UI (service)** or uninstall the startup service first. The existing Uvicorn URL capture and `local.set` behavior are unchanged.
+
+**Verified:** `node --check start.js` and direct inspection against the required Pinokio URL-capture pattern (`input.event[1]`). Video Studio's latest logs show the normal Start path only; no service restart was performed.
+
+### Notes
+
+- PATCH bump (0.1.1 → 0.1.2) — launcher guard only, no app/backend change. **Just run Update**.
+
 ## [0.1.1] — 2026-07-01
 
 ### Fixed — numeric/UX consistency audit: catalog size and live download size disagreed for the same model

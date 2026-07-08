@@ -16,6 +16,7 @@ module.exports = {
           "PYTORCH_ENABLE_MPS_FALLBACK": "1"
         },
         message: [
+          "if [ -f ../service/.installed ]; then echo \"Startup service mode is installed. Use 'Open UI (service)' or uninstall the startup service before using Start.\"; exit 1; fi",
           // Binds on every network interface (LAN, Tailscale, loopback) at a
           // fixed port so other devices on your tailnet/LAN can hit the API
           // directly without going through Pinokio's proxy. Change the port
