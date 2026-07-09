@@ -13,7 +13,9 @@ module.exports = {
         },
         message: [
           "python -m pip install --upgrade pip",
-          "uv pip install -r requirements.txt"
+          // Install from the fully-pinned lock so a fresh machine gets the exact
+          // verified package set (see the lock's header for the upgrade flow).
+          "uv pip install -r requirements.lock.txt"
         ]
       }
     }

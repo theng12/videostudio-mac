@@ -16,7 +16,9 @@ module.exports = {
         },
         message: [
           "python -m pip install --upgrade pip",
-          "uv pip install -r requirements.txt"
+          // Converge onto the committed phase-1 lock (generation deps converge via
+          // Reinstall Generation, which uses its own lock).
+          "uv pip install -r requirements.lock.txt"
         ]
       }
     },

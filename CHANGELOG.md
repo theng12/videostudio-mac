@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.0] — 2026-07-09
+
+### Added — dependency lockfiles: fresh installs are now reproducible forever
+
+`requirements.txt` / `requirements-generation.txt` use version **floors** (`>=`), so a fresh install months from now would resolve to whatever PyPI serves that day — one breaking release in any dependency bricks the app on a new machine while existing installs keep working. Same fix as the other four studios (Chat v1.19.0, Voice v1.8.0, Image v1.18.0, Music v1.4.0).
+
+- **`app/requirements.lock.txt`** — the pinned phase-1 set (36 packages, compiled from the floors constrained to the verified env's installed versions).
+- **`app/requirements-generation.lock.txt`** — the full verified env (38 packages at this early stage; regenerate as the generation stack grows).
+- `install.js`, `install_generation.js`, and `update.js` now install from the locks. Upgrade flow documented in each lock's header.
+
+Verified: both locks resolve all-satisfied against the live env; all three launcher scripts pass `node --check`; python was already pinned (`python=3.12`).
+
+### Notes
+
+- MINOR bump (0.1.2 → 0.2.0) — install-pipeline change, no package versions changed.
+
 ## [0.1.2] — 2026-07-08
 
 ### Fixed — Start now refuses to compete with startup service mode

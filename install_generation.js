@@ -27,7 +27,9 @@ module.exports = {
           "path": "{{path.resolve(cwd, 'conda_env')}}"
         },
         message: [
-          "uv pip install -r requirements-generation.txt"
+          // Fully-pinned lock of the ENTIRE verified env (phase 1 + generation) —
+          // converges everything to known-good versions.
+          "uv pip install -r requirements-generation.lock.txt"
         ]
       }
     },
