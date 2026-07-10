@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.4] — 2026-07-10
+
+### Changed — Version now shown as a badge in the top-right header (consistent across all sibling apps)
+
+The app version was displayed inconsistently across the Studio fleet (bottom footer on
+some, top-right on Chat, missing on Video). It's now a small `v0.2.4`-style badge in the
+top-right of the header on every app, matching Chat Studio — visible at a glance without
+scrolling to a footer.
+
+### Notes
+
+- PATCH bump (0.2.3 → 0.2.4) — frontend only (`index.html` + `style.css`). Served with
+  no-cache headers, so it appears on the next browser reload without a restart.
+
+---
 ## [0.2.3] — 2026-07-10
 
 ### Fixed — Update reinstalls the service (rewrites the launchd plist) instead of kickstarting a stale one

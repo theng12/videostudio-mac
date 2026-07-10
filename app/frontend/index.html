@@ -22,6 +22,7 @@
       </div>
     </div>
     <div class="topbar-right">
+      <span class="version-badge" x-text="'v' + health.app_version" x-show="health.app_version" x-cloak></span>
       <span class="health" :class="health.ok ? 'ok' : 'bad'" :title="health.ok ? 'server up' : 'server down'"></span>
       <span class="device-chip" x-show="diag.device" x-text="'device: ' + diag.device"></span>
     </div>
