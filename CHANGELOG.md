@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.5] — 2026-07-10
+
+### Changed — Video Studio now uses the shared Studio workspace shell
+
+Video Studio still used an older two-row header and opened Generate without any model
+or clip context. Navigation is now consolidated into a compact responsive header, while
+Generate surfaces the selected model, source mode, and calculated clip length before the
+render controls. Settings now uses a clear heading and responsive two-column layout.
+
+### Verification
+
+- Validated Alpine expressions, JavaScript syntax, HTML parsing, responsive desktop and
+  mobile renders, and the existing launcher URL-capture pattern without installing the
+  optional video-generation stack.
+- Generation jobs, model defaults, downloads, token persistence, service mode, and API
+  behavior were checked and deliberately left unchanged.
+
+---
+
 ## [0.2.4] — 2026-07-10
 
 ### Changed — Version now shown as a badge in the top-right header (consistent across all sibling apps)
