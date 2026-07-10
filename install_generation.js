@@ -60,9 +60,12 @@ module.exports = {
       }
     },
     {
+      // install_service.sh (not restart_service.sh) rewrites the launchd plist to
+      // the current on-disk serve script before relaunching — robust to the
+      // serve.sh -> <app>-serve.sh rename. Idempotent.
       when: "{{exists('service/.installed')}}",
       method: "shell.run",
-      params: { message: [ "bash restart_service.sh" ] }
+      params: { message: [ "bash install_service.sh" ] }
     },
     {
       when: "{{!exists('service/.installed')}}",

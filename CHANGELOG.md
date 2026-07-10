@@ -10,6 +10,29 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.3] — 2026-07-10
+
+### Fixed — Update reinstalls the service (rewrites the launchd plist) instead of kickstarting a stale one
+
+The service scripts were renamed from generic `serve.sh` / `watchdog.sh` to
+`<app>-serve.sh` / `<app>-watchdog.sh`, and the launchd plist's `ProgramArguments`
+now points at the renamed script. A machine with the service already installed has
+a plist pointing at the OLD `serve.sh` — so a plain **kickstart** (`restart_service.sh`)
+would relaunch a plist pointing at a now-deleted path and the service would fail to
+come back up after an update.
+
+`update.js` (and `install_generation.js`) now restart the service with
+**`install_service.sh`** instead of `restart_service.sh`. `install_service.sh`
+regenerates the plist to match the current on-disk scripts *before* relaunching
+(bootout → bootstrap → kickstart), so the rename is folded in automatically. It's
+idempotent and safe to run on every update.
+
+### Notes
+
+- PATCH bump (0.2.2 → 0.2.3) — launcher scripts only. Applies only where the app
+  runs as a launchd service (`service/.installed`); the `start.js` path is unchanged.
+
+---
 ## [0.2.2] — 2026-07-10
 
 ### Added — In-app auto-check banner: tells you when to update instead of failing silently

@@ -58,10 +58,14 @@ module.exports = {
     },
     {
       // Restart the REAL server for this machine's mode — mutually exclusive so a
-      // second server never fights the service for the fixed port.
+      // second server never fights the service for the fixed port. Use
+      // install_service.sh (NOT restart_service.sh): it REWRITES the launchd plist
+      // to match the current on-disk scripts before relaunching, so a git pull that
+      // renamed the serve script (serve.sh -> <app>-serve.sh) can't leave the plist
+      // kickstarting a deleted path. Idempotent + safe to run every update.
       when: "{{exists('service/.installed')}}",
       method: "shell.run",
-      params: { message: [ "bash restart_service.sh" ] }
+      params: { message: [ "bash install_service.sh" ] }
     },
     {
       when: "{{!exists('service/.installed')}}",
