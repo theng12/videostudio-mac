@@ -435,5 +435,41 @@
     </template>
   </div>
 
+  <!-- ── KH auto-update banner ──────────────────────────────────────────────
+       Self-contained (no Alpine coupling). Reads /api/update-status and, if this
+       install is behind or its generation stack is missing, shows a dismissible
+       notice pointing at the one-click Update / Install Generation button in the
+       Pinokio sidebar. Degrades silently if the endpoint isn't present yet
+       (e.g. a running service that hasn't restarted onto the new build). -->
+  <script>
+  (function () {
+    function build(s) {
+      var msg, key, bg, fg;
+      if (s.generation_required && s.generation_ok === false) {
+        key = "kh-gen-missing"; bg = "#f3b562"; fg = "#1a1204";
+        msg = "\u26A0 Generation engine not installed \u2014 the Generate tab won\u2019t work. " +
+              "In the Pinokio sidebar, click <b>Install Generation</b> (or <b>Update</b>).";
+      } else if (s.update_available && s.latest_version) {
+        key = "kh-upd-" + s.latest_version; bg = "#6aa7ff"; fg = "#04122a";
+        msg = "\u2B06 Update available (v" + s.app_version + " \u2192 v" + s.latest_version + "). " +
+              "In the Pinokio sidebar, click <b>Update</b>.";
+      } else { return; }
+      try { if (localStorage.getItem(key) === "1") return; } catch (e) {}
+      var bar = document.createElement("div");
+      bar.style.cssText = "position:sticky;top:0;z-index:99999;display:flex;align-items:center;gap:12px;" +
+        "padding:8px 16px;font:13px/1.4 system-ui,-apple-system,sans-serif;background:" + bg + ";color:" + fg +
+        ";border-bottom:1px solid rgba(0,0,0,.25)";
+      var span = document.createElement("span"); span.style.flex = "1"; span.innerHTML = msg;
+      var btn = document.createElement("button"); btn.textContent = "\u2715";
+      btn.setAttribute("aria-label", "Dismiss");
+      btn.style.cssText = "background:transparent;border:0;cursor:pointer;font-size:14px;color:inherit;opacity:.7";
+      btn.onclick = function () { try { localStorage.setItem(key, "1"); } catch (e) {} bar.remove(); };
+      bar.appendChild(span); bar.appendChild(btn);
+      document.body.insertBefore(bar, document.body.firstChild);
+    }
+    fetch("/api/update-status").then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) { if (s) build(s); }).catch(function () {});
+  })();
+  </script>
 </body>
 </html>

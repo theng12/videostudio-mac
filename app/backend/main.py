@@ -148,6 +148,61 @@ def health() -> dict:
     }
 
 
+# ── Update / generation health (auto-check surfaced by the web-UI banner) ──
+# Detect-in-app, apply-via-sidebar: the frontend banner reads this and points
+# the user at the single "Update" (or "Install Generation") button in the
+# Pinokio sidebar. We never git-pull from here — a sandboxed web page can't
+# reliably drive Pinokio's script runner, and the backend restarting itself
+# mid-request is fragile.
+import importlib.util as _ilu
+import threading as _threading
+import time as _time
+import urllib.request as _urlreq
+
+_UPDATE_REPO = "theng12/videostudio-mac"
+_GEN_MODULE = "diffusers"
+_update_state = {"checked_at": 0.0, "latest": None}
+
+
+def _parse_ver(v):
+    try:
+        return tuple(int(x) for x in str(v).strip().lstrip("v").split(".")[:3])
+    except Exception:
+        return (0,)
+
+
+def _refresh_latest_version():
+    try:
+        url = f"https://raw.githubusercontent.com/{_UPDATE_REPO}/main/VERSION"
+        with _urlreq.urlopen(url, timeout=5) as r:
+            _update_state["latest"] = r.read().decode("utf-8").strip()
+    except Exception:
+        pass
+    finally:
+        _update_state["checked_at"] = _time.time()
+
+
+@app.get("/api/update-status")
+def update_status() -> dict:
+    """What the web-UI banner needs: are we behind the published version, and is
+    the generation stack actually installed? The remote version is fetched from
+    the repo's raw VERSION file at most every ~6h, in a background thread, so a
+    slow or unreachable GitHub never blocks the request."""
+    if _time.time() - _update_state["checked_at"] > 6 * 3600:
+        _threading.Thread(target=_refresh_latest_version, daemon=True).start()
+    latest = _update_state["latest"]
+    behind = bool(latest and _parse_ver(latest) > _parse_ver(APP_VERSION))
+    gen_required = _GEN_MODULE is not None
+    gen_ok = (_ilu.find_spec(_GEN_MODULE) is not None) if gen_required else None
+    return {
+        "app_version": APP_VERSION,
+        "latest_version": latest,
+        "update_available": behind,
+        "generation_required": gen_required,
+        "generation_ok": gen_ok,
+    }
+
+
 @app.get("/api/version")
 def app_release_version() -> dict:
     """Application release version + title. Read from the VERSION file at the

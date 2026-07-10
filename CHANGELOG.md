@@ -10,6 +10,22 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.2] — 2026-07-10
+
+### Added — In-app auto-check banner: tells you when to update instead of failing silently
+
+On load the web UI checks `GET /api/update-status` and shows a dismissible banner when this install needs attention:
+
+- **A newer version is published** — compares this install's VERSION against the repo's published VERSION (fetched from GitHub raw, cached ~6h, in a background thread so it never blocks). Banner: "⬆ Update available (vX → vY)", pointing at the one-click **Update** button in the Pinokio sidebar.
+- **The generation engine isn't installed** — detects the missing stack directly. Banner: "⚠ Generation engine not installed — the Generate tab won't work", pointing at **Install Generation** (or **Update**) in the sidebar. This is the exact silent failure that let a broken generation install look fine before.
+
+Detect-in-app, apply-via-sidebar: a sandboxed web page (external browser, Tailscale) can't reliably drive Pinokio's script runner, so the banner points at the sidebar's one-click Update rather than trying to self-update. The banner is self-contained (no framework coupling) and degrades silently if the endpoint isn't live yet (e.g. a running service that hasn't restarted onto the new build).
+
+### Notes
+
+- PATCH bump (0.2.1 → 0.2.2) — backend adds `GET /api/update-status`; frontend adds the banner to `index.html`. No change to existing features.
+
+---
 ## [0.2.1] — 2026-07-10
 
 ### Fixed — One-click Update that actually works, and generation installs that don't silently fail
