@@ -37,7 +37,7 @@
   <main>
 
     <!-- ─────────────── GENERATE ─────────────── -->
-    <section x-show="tab==='generate'" class="pane">
+    <section x-show="tab==='generate'" class="pane" x-cloak>
 
       <header class="workspace-intro">
         <div class="workspace-copy">
@@ -212,7 +212,7 @@
     </section>
 
     <!-- ─────────────── MODELS ─────────────── -->
-    <section x-show="tab==='models'" class="pane models-page">
+    <section x-show="tab==='models'" class="pane models-page" x-cloak>
 
       <header class="models-hero">
         <div class="models-hero-copy">
@@ -392,7 +392,7 @@
     </section>
 
     <!-- ─────────────── DOWNLOADS ─────────────── -->
-    <section x-show="tab==='downloads'" class="pane">
+    <section x-show="tab==='downloads'" class="pane" x-cloak>
       <div class="output-head">
         <h3>Downloads</h3>
         <button class="link-btn" @click="clearDownloads()" x-show="downloads.length">clear finished</button>
@@ -417,7 +417,7 @@
     </section>
 
     <!-- ─────────────── SETTINGS ─────────────── -->
-    <section x-show="tab==='settings'" class="pane">
+    <section x-show="tab==='settings'" class="pane" x-cloak>
       <header class="section-head">
         <span class="workspace-kicker">App configuration</span>
         <h1>Settings</h1>

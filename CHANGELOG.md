@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.6] — 2026-07-10
+
+### Fixed — Inactive tabs no longer flash during startup
+
+The four primary panes used Alpine `x-show` without `x-cloak`. Before Alpine finished
+initializing, browsers rendered Generate, Models, Downloads, and Settings together for a
+brief but visible full-page flash. All panes now use the stylesheet's existing cloak rule
+and reveal only after Alpine has selected the active tab.
+
+### Verification
+
+- Reproduced the pre-fix state with scripts delayed (all four panes computed as visible),
+  then confirmed all four remain hidden until Alpine initializes and only Generate shows.
+- Video routes, decimal byte formatting, download names, and generation behavior were
+  checked and deliberately left unchanged.
+
+---
+
 ## [0.2.5] — 2026-07-10
 
 ### Changed — Video Studio now uses the shared Studio workspace shell
