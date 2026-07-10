@@ -94,7 +94,7 @@ module.exports = {
         { icon: "fa-solid fa-film", text: "Outputs", href: "app/output?fs=true" },
         { icon: "fa-solid fa-folder-tree", text: "HF Cache", href: "cache/HF_HOME/hub?fs=true" },
         { icon: "fa-regular fa-circle-xmark", text: "Uninstall Startup Service", href: "unservice.js" },
-        { icon: "fa-solid fa-rotate", text: "Update & Restart", href: "update_and_restart.js" }
+        { icon: "fa-solid fa-rotate", text: "Update", href: "update.js" }
       ]
     }
 
@@ -152,8 +152,8 @@ module.exports = {
           },
           {
             icon: "fa-solid fa-rotate",
-            text: "Update & Restart",
-            href: "update_and_restart.js"
+            text: "Update",
+            href: "update.js"
           },
           {
             icon: "fa-solid fa-folder-tree",

@@ -10,6 +10,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.1] — 2026-07-10
+
+### Fixed — One-click Update that actually works, and generation installs that don't silently fail
+
+Overhauled the update/install flow. It was tedious and, worse, quietly broken:
+
+- **One Update button, correct in every run mode.** The old "Update & Restart" was hardwired to stop/start `start.js`, but in production this app runs as an always-on launchd **service** — so it stopped nothing and then launched a *second* server that fought the service for the fixed port. The unified `update.js` now detects the mode and restarts the **real** server (kickstart the service **or** start `start.js` — never both), so updating no longer requires manually stopping production first.
+- **Generation deps refresh on the same click.** `update.js` used to install only the base deps; heavy ML deps came from a separate "Reinstall Generation" button, so a release that bumped a model dependency silently didn't apply on Update. Update now refreshes generation deps too (when generation is installed) — no second button to hunt for.
+- **Install from source, not a drifted lock.** `install_generation.js` (and Update) now install from `requirements-generation.txt`, the authoritative range file. The generation `.lock.txt` had drifted — on some machines it contained only base packages, so "Install Generation" installed nothing while the UI still reported success. Source-first can't have that failure mode.
+- **Verify-then-notify.** After installing, the key modules are imported; a failure breaks the run and withholds the "installed" notification. The old script fired "Generation engine installed" unconditionally — even on total failure.
+- **"Update & Restart" folded into "Update"** (kept as a back-compat alias that forwards to `update.js`).
+
+### Notes
+
+- PATCH bump (0.2.0 → 0.2.1) — launcher scripts only (`update.js`, `install_generation.js`, `update_and_restart.js`, `pinokio.js`). No app-code change.
+- Verified: all launcher scripts load; the menu renders a single mode-aware "Update"; generation deps import in the env.
+
+---
 ## [0.2.0] — 2026-07-09
 
 ### Added — dependency lockfiles: fresh installs are now reproducible forever
