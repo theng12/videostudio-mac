@@ -17,7 +17,7 @@ PORT=47872
 APPNAME="Video Studio KH"
 
 mkdir -p "$LA" "$ROOT/logs/service" "$ROOT/service"
-chmod +x "$ROOT/serve.sh" "$ROOT/watchdog.sh"
+chmod +x "$ROOT/videostudio-serve.sh" "$ROOT/videostudio-watchdog.sh"
 
 # ── server agent: boot-start + auto-restart on crash ──
 cat > "$LA/$SRV.plist" <<PLIST
@@ -27,7 +27,7 @@ cat > "$LA/$SRV.plist" <<PLIST
 <dict>
   <key>Label</key><string>$SRV</string>
   <key>ProgramArguments</key>
-  <array><string>$ROOT/serve.sh</string></array>
+  <array><string>$ROOT/videostudio-serve.sh</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
@@ -46,7 +46,7 @@ cat > "$LA/$WD.plist" <<PLIST
 <dict>
   <key>Label</key><string>$WD</string>
   <key>ProgramArguments</key>
-  <array><string>$ROOT/watchdog.sh</string></array>
+  <array><string>$ROOT/videostudio-watchdog.sh</string></array>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>60</integer>
   <key>StandardOutPath</key><string>$ROOT/logs/service/watchdog.log</string>
@@ -58,6 +58,11 @@ PLIST
 # (re)load both agents — bootout first so re-running picks up any changes
 launchctl bootout  "gui/$UID_NUM/$SRV" 2>/dev/null || true
 launchctl bootout  "gui/$UID_NUM/$WD"  2>/dev/null || true
+
+# bootout is asynchronous — wait for each label to fully unload before we
+# bootstrap again, or launchd returns "Bootstrap failed: 5: Input/output error".
+_wait_gone() { for _ in $(seq 1 25); do launchctl print "gui/$UID_NUM/$1" >/dev/null 2>&1 || return 0; sleep 0.2; done; }
+_wait_gone "$SRV"; _wait_gone "$WD"
 
 # Take over the port: if you started the app via Pinokio's "Start", that
 # instance is still holding port $PORT. The whole point of converting to a
@@ -77,8 +82,10 @@ if [ -n "$PORT_PIDS" ]; then
   echo ""
 fi
 
-launchctl bootstrap "gui/$UID_NUM" "$LA/$SRV.plist"
-launchctl bootstrap "gui/$UID_NUM" "$LA/$WD.plist"
+# retry once — bootstrap can still transiently fail right after a bootout.
+_bootstrap() { launchctl bootstrap "gui/$UID_NUM" "$1" 2>/dev/null || { sleep 1; launchctl bootstrap "gui/$UID_NUM" "$1"; }; }
+_bootstrap "$LA/$SRV.plist"
+_bootstrap "$LA/$WD.plist"
 launchctl kickstart "gui/$UID_NUM/$SRV" 2>/dev/null || true
 
 touch "$ROOT/service/.installed"
