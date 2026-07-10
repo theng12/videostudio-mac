@@ -83,8 +83,23 @@ class DownloadJob:
 
         # ETA: remaining bytes at current speed. Only show when speed is
         # nonzero and there's a known total.
+        #
+        # Also require a few seconds of runtime first: right after a download
+        # starts, snapshot_download() is often still resolving repo metadata
+        # before any real bytes land, so the very first EMA sample can be a
+        # near-zero "instant" speed (e.g. 1.57 KB observed over ~3 sec). That
+        # single noisy sample, divided into a multi-GB remaining total,
+        # produces an absurd ETA ("ETA 99679m 03s" seconds after clicking
+        # Download). Waiting until the EMA has had a few real 1-second update
+        # cycles lets it settle to a representative speed first.
         eta_seconds = None
-        if self.state == "running" and self._speed_bps > 0 and self.total_bytes > 0:
+        if (
+            self.state == "running"
+            and self._speed_bps > 0
+            and self.total_bytes > 0
+            and self.started_at is not None
+            and now - self.started_at >= 3.0
+        ):
             remaining = max(0, self.total_bytes - observed)
             eta_seconds = remaining / self._speed_bps
 

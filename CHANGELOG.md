@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.7] — 2026-07-10
+
+### Fixed — download ETA settle-guard and honest catalog sizes
+
+**Absurd download ETA (`downloads.py`).** Same suite-wide fix: the speed EMA's first near-zero sample (taken before real bytes land) produced ETAs like "99679m 03s" seconds after clicking Download. `eta_seconds` is now suppressed until the job has ≥3 s of runtime. (The frontend doesn't surface ETA yet; the guard is applied for correctness and consistency with the other studios.)
+
+**Catalog sizes now reflect the true download size.** These repos download unfiltered, so the old `size_gb` values were far too low. Corrected all 10 entries to the real Hugging Face repo sizes — most dramatically `Lightricks/LTX-Video` 19→254 GB (the repo bundles every model version), plus LTX-Video-0.9.7-distilled 19→48, Wan2.2-A14B T2V/I2V 62→126 each, Wan2.2-TI2V-5B 20→34, and HunyuanVideo 40→42/44. Verified against the HF API `blobs=true` listing.
+
+**Checked, left unchanged:** memory floors — for video diffusion, peak runtime memory is driven by activations, not the (multi-version) download size, so the runtime floors were left as the authors set them. Download filtering (to avoid pulling every bundled version) was deferred as it needs per-model load-testing. `py_compile` clean.
+
 ## [0.2.6] — 2026-07-10
 
 ### Fixed — Inactive tabs no longer flash during startup
