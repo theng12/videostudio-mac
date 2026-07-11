@@ -144,12 +144,13 @@
               <input type="number" x-model.number="gen.strength" step="0.05" min="0" max="1" /></label>
           </div>
 
-          <button class="primary big" :disabled="gen.submitting || !gen.prompt.trim()"
+          <button class="primary big" :disabled="!canSubmit"
                   @click="submitGenerate()">
             <span x-show="!gen.submitting">Generate video</span>
             <span x-show="gen.submitting">Submitting…</span>
           </button>
-          <p class="hint" x-text="frameHint()"></p>
+          <p class="hint" x-show="!canSubmit" x-text="submitHint" x-cloak></p>
+          <p class="hint" x-show="canSubmit" x-text="frameHint()" x-cloak></p>
         </div>
 
         <!-- right: outputs -->
@@ -506,18 +507,18 @@
       if (s.generation_required && s.generation_ok === false) {
         key = "kh-gen-missing"; bg = "#f3b562"; fg = "#1a1204";
         msg = "\u26A0 Generation engine not installed \u2014 the Generate tab won\u2019t work. " +
-              "In the Pinokio sidebar, click <b>Install Generation</b> (or <b>Update</b>).";
+              "In the Pinokio sidebar, click Install Generation (or Update).";
       } else if (s.update_available && s.latest_version) {
         key = "kh-upd-" + s.latest_version; bg = "#6aa7ff"; fg = "#04122a";
         msg = "\u2B06 Update available (v" + s.app_version + " \u2192 v" + s.latest_version + "). " +
-              "In the Pinokio sidebar, click <b>Update</b>.";
+              "In the Pinokio sidebar, click Update.";
       } else { return; }
       try { if (localStorage.getItem(key) === "1") return; } catch (e) {}
       var bar = document.createElement("div");
       bar.style.cssText = "position:sticky;top:0;z-index:99999;display:flex;align-items:center;gap:12px;" +
         "padding:8px 16px;font:13px/1.4 system-ui,-apple-system,sans-serif;background:" + bg + ";color:" + fg +
         ";border-bottom:1px solid rgba(0,0,0,.25)";
-      var span = document.createElement("span"); span.style.flex = "1"; span.innerHTML = msg;
+      var span = document.createElement("span"); span.style.flex = "1"; span.textContent = msg;
       var btn = document.createElement("button"); btn.textContent = "\u2715";
       btn.setAttribute("aria-label", "Dismiss");
       btn.style.cssText = "background:transparent;border:0;cursor:pointer;font-size:14px;color:inherit;opacity:.7";

@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.3.1] — 2026-07-12
+
+### Fixed — honest pipeline readiness and safer media uploads
+
+- Diagnostics now verifies every required Diffusers pipeline class, not merely that
+  the package imports. The UI and API reject models whose exact text/image/video
+  pipeline is missing and point users to Update/Reinstall Generation.
+- The Generate button now requires a selected ready model, prompt, and source media
+  when appropriate, with a specific inline explanation for the missing input.
+- The header version badge now keeps the `/api/health` payload instead of reducing it
+  to `{ok}`, fixing the visible `vundefined` label. The empty output-folder action also
+  sends a normal toast string instead of rendering `[object Object]`.
+- Uploads stream to disk instead of being read entirely into memory. Images are limited
+  to 20 MB, videos to 500 MB, and unsupported filename types are rejected rather than
+  silently relabeled. The frontend enforces and explains the same limits.
+- Video parameters now have explicit dimensions, frame, FPS, step, guidance, strength,
+  seed, and prompt bounds. Failed jobs remove partial MP4 files.
+
+### Security
+
+- Hugging Face token storage is forced to owner-only (`0600`) permissions.
+- Remote update-version metadata is rendered with `textContent`.
+- The installed Python environment was audited and has no known dependency
+  vulnerabilities. LAN bind/CORS remain unchanged for server-mode compatibility.
+
+### Verification
+
+- Python/JavaScript/HTML checks, request-boundary and streaming-upload tests, pipeline
+  coverage checks, dependency audit, and a stopped-app browser smoke test all pass.
+
 ## [0.3.0] — 2026-07-10
 
 ### Added — Clip management: per-clip reveal/delete, disk management, richer progress

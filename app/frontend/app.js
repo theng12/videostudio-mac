@@ -100,7 +100,11 @@ function studio() {
     },
 
     async refreshHealth() {
-      try { this.health = { ok: (await fetch("/api/health")).ok }; }
+      try {
+        const response = await fetch("/api/health");
+        const data = response.ok ? await response.json() : {};
+        this.health = { ...data, ok: response.ok && data.ok !== false };
+      }
       catch (_) { this.health = { ok: false }; }
     },
 
@@ -474,8 +478,36 @@ function studio() {
       const base = { "ltx-video": 8, "wan22": 4, "hunyuanvideo": 4, "cogvideox": 8 }[m.family] || 8;
       return `Frames are rounded to ${base}·n+1 for this model. Bigger frames/steps = much longer generation.`;
     },
+    get canSubmit() {
+      if (this.gen.submitting || !this.gen.repo || !this.gen.prompt.trim()) return false;
+      if (!this.isModelReady(this.gen.repo)) return false;
+      if (this.gen.mode !== "txt2video" && !this.gen.inputFile) return false;
+      return true;
+    },
+    get submitHint() {
+      if (!this.gen.repo) return "Choose a downloaded model.";
+      if (!this.isModelReady(this.gen.repo)) return "This model's video pipeline is not ready. Run Update or reinstall Generation.";
+      if (!this.gen.prompt.trim()) return "Enter a prompt to continue.";
+      if (this.gen.mode !== "txt2video" && !this.gen.inputFile) {
+        return "Choose an input " + (this.gen.mode === "img2video" ? "image." : "video.");
+      }
+      return "";
+    },
     onFile(event) {
       const f = event.target.files && event.target.files[0]; if (!f) return;
+      const wantsImage = this.gen.mode === "img2video";
+      const validType = wantsImage ? f.type.startsWith("image/") : f.type.startsWith("video/");
+      const maxBytes = wantsImage ? 20 * 1024 * 1024 : 500 * 1024 * 1024;
+      if (!validType) {
+        this.pushToast("Choose a valid " + (wantsImage ? "image" : "video") + " file.", "error");
+        event.target.value = "";
+        return;
+      }
+      if (f.size > maxBytes) {
+        this.pushToast((wantsImage ? "Images must be 20 MB or smaller." : "Videos must be 500 MB or smaller."), "error");
+        event.target.value = "";
+        return;
+      }
       if (this.gen.inputUrl) URL.revokeObjectURL(this.gen.inputUrl);
       this.gen.inputFile = f; this.gen.inputName = f.name; this.gen.inputUrl = URL.createObjectURL(f);
     },
@@ -484,7 +516,7 @@ function studio() {
       this.gen.prompt = list[Math.floor(Math.random() * list.length)];
     },
     async submitGenerate() {
-      if (!this.gen.prompt.trim()) return;
+      if (!this.canSubmit) return;
       this.gen.submitting = true;
       try {
         let res;
@@ -532,7 +564,7 @@ function studio() {
       if (withPath && withPath.output_path) {
         this.revealInFolder(withPath.output_path.replace(/[/\\][^/\\]+$/, ""));
       } else {
-        this.pushToast({ kind: "info", icon: "📂", title: "No clips yet", body: "Generate a clip first — then this opens the folder with all your videos." });
+        this.pushToast("No clips yet. Generate one first, then this opens the output folder.", "info");
       }
     },
     useInGenerate(repo) { this.gen.repo = repo; this.applyModelDefaults(); this.tab = "generate"; },

@@ -40,12 +40,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from . import cache, catalog, settings as app_settings
 from .downloads import manager
-from .video import manager as gen_manager, diagnostics as gen_diagnostics
+from .video import manager as gen_manager, diagnostics as gen_diagnostics, pipeline_available
 from .imports import import_path, scan_for_candidates
 
 
@@ -131,16 +131,16 @@ class TokenTestBody(BaseModel):
 
 
 class Txt2VideoBody(BaseModel):
-    repo: str
-    prompt: str
-    negative_prompt: str = ""
-    width: Optional[int] = None            # falls back to the model's video_defaults
-    height: Optional[int] = None
-    frames: Optional[int] = None           # rounded to the model's valid frame count
-    fps: Optional[int] = None
-    steps: Optional[int] = None
-    guidance: Optional[float] = None
-    seed: Optional[int] = None             # omit / -1 for a random (recorded) seed
+    repo: str = Field(max_length=500)
+    prompt: str = Field(max_length=20000)
+    negative_prompt: str = Field("", max_length=20000)
+    width: Optional[int] = Field(None, ge=256, le=2048)
+    height: Optional[int] = Field(None, ge=256, le=2048)
+    frames: Optional[int] = Field(None, ge=1, le=513)
+    fps: Optional[int] = Field(None, ge=1, le=60)
+    steps: Optional[int] = Field(None, ge=1, le=200)
+    guidance: Optional[float] = Field(None, ge=0.0, le=30.0)
+    seed: Optional[int] = Field(None, ge=-1, le=4294967295)
 
 
 # ───────────── API: meta ─────────────
@@ -572,6 +572,8 @@ def start_txt2video(body: Txt2VideoBody) -> dict:
             status_code=400,
             detail=f"{model.label} does not support text-to-video. Pick a t2v-capable model.",
         )
+    if not pipeline_available(model.family, "txt2video"):
+        raise HTTPException(status_code=409, detail="This video pipeline is missing. Run Update or reinstall Generation.")
     job = gen_manager.start_txt2video(body.model_dump())
     return {"job": job.serialize()}
 
@@ -607,6 +609,20 @@ async def start_video2video(
             status_code=400,
             detail=f"{model.label} does not support {mode}. Supported: {', '.join(model.capabilities)}.",
         )
+    if not pipeline_available(model.family, mode):
+        raise HTTPException(status_code=409, detail="This video pipeline is missing. Run Update or reinstall Generation.")
+    if len(repo) > 500 or len(prompt) > 20000 or len(negative_prompt) > 20000:
+        raise HTTPException(status_code=422, detail="repo and prompts exceed the supported length")
+
+    numeric_limits = {
+        "width": (width, 256, 2048), "height": (height, 256, 2048),
+        "frames": (frames, 1, 513), "fps": (fps, 1, 60),
+        "steps": (steps, 1, 200), "guidance": (guidance, 0.0, 30.0),
+        "seed": (seed, -1, 4294967295), "strength": (strength, 0.0, 1.0),
+    }
+    for name, (value, low, high) in numeric_limits.items():
+        if value is not None and not low <= value <= high:
+            raise HTTPException(status_code=422, detail=f"{name} must be between {low} and {high}")
 
     # Persist the upload so the worker can load it by path.
     uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
@@ -618,12 +634,26 @@ async def start_video2video(
         allowed, default_suffix = (".mp4", ".mov", ".webm", ".gif", ".mkv"), ".mp4"
     suffix = Path(file.filename).suffix.lower()
     if suffix not in allowed:
-        suffix = default_suffix
+        raise HTTPException(status_code=400, detail=f"Unsupported input type. Allowed: {', '.join(allowed)}")
     saved = uploads_dir / (uuid.uuid4().hex[:12] + suffix)
-    data = await file.read()
-    if not data:
+    max_bytes = 20 * 1024 * 1024 if mode == "img2video" else 500 * 1024 * 1024
+    written = 0
+    try:
+        with saved.open("wb") as output:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Input image must be 20 MB or smaller." if mode == "img2video" else "Input video must be 500 MB or smaller.",
+                    )
+                output.write(chunk)
+    except Exception:
+        saved.unlink(missing_ok=True)
+        raise
+    if written == 0:
+        saved.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="input file is empty")
-    saved.write_bytes(data)
 
     params = {
         "repo": repo,

@@ -119,6 +119,18 @@ _ENGINE_REQUIREMENTS = {fid: list(_COMMON_REQS) for fid in catalog.FAMILIES}
 _WIRED_FAMILIES = set(catalog.FAMILIES.keys())
 
 
+def pipeline_available(family: str, mode: str) -> bool:
+    """Whether the installed Diffusers exposes this exact pipeline class."""
+    class_name = _PIPELINE_CLASSES.get((family, mode))
+    if not class_name:
+        return False
+    try:
+        import diffusers
+        return hasattr(diffusers, class_name)
+    except Exception:
+        return False
+
+
 def _probe_package(display_name: str, import_name: Optional[str] = None) -> dict:
     target = import_name or display_name
     try:
@@ -165,13 +177,18 @@ def diagnostics() -> dict:
         missing = [p for p in requires if not pkg_status.get(p)]
         deps_ok = not missing
         wired = family in _WIRED_FAMILIES
+        missing_pipelines = [
+            class_name for (fid, _mode), class_name in _PIPELINE_CLASSES.items()
+            if fid == family and deps_ok and not pipeline_available(fid, _mode)
+        ]
         engine_results.append({
             "family": family,
             "requires": requires,
             "missing": missing,
             "deps_ok": deps_ok,
             "wired": wired,
-            "ready": deps_ok and wired,
+            "missing_pipelines": missing_pipelines,
+            "ready": deps_ok and wired and not missing_pipelines,
         })
 
     return {
@@ -595,6 +612,10 @@ class VideoManager:
                     job.error = f"{type(e).__name__}: {e}"
                     print(f"[vid] error {job.job_id}: {job.error}", file=sys.stderr, flush=True)
                     traceback.print_exc()
+                try:
+                    output_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
             finally:
                 job.finished_at = time.time()
                 self._persist()
