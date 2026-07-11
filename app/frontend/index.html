@@ -160,8 +160,10 @@
             <button class="link-btn" @click="clearHistory()" x-show="genJobs.length">clear history</button>
           </div>
           <div class="empty" x-show="genJobs.length === 0">
-            Generated clips appear here. The first run downloads nothing extra but
-            loads the model into memory — expect a wait.
+            <strong>No clips yet.</strong>
+            Set a prompt and hit <em>Generate video</em> — finished clips collect here
+            with an inline player, plus download, reveal, and delete. The first run
+            loads the model into memory, so expect a wait.
           </div>
           <template x-for="j in genJobs" :key="j.id">
             <div class="job card">
@@ -177,7 +179,7 @@
               <div class="progress" x-show="j.state==='running' || j.state==='queued'">
                 <div class="bar" :style="`width:${Math.round((j.progress||0)*100)}%`"></div>
                 <span class="progress-label"
-                      x-text="`step ${j.current_step}/${j.total_steps}`"></span>
+                      x-text="`${Math.round((j.progress||0)*100)}%${j.total_steps ? ' · step ' + j.current_step + '/' + j.total_steps : ''}${j.duration_seconds != null ? ' · ' + Math.round(j.duration_seconds) + 's' : ''}`"></span>
               </div>
 
               <video x-show="j.state==='done' && j.output_url" controls loop
@@ -190,9 +192,37 @@
                 <span x-show="j.duration_seconds != null"
                       x-text="Math.round(j.duration_seconds) + 's'"></span>
                 <a class="link-accent" :href="j.output_url" :download="j.id + '.mp4'">download</a>
+                <button class="link-btn" x-show="j.output_path" @click="revealInFolder(j.output_path)"
+                        title="Show this clip in Finder">📂 reveal</button>
+                <button class="link-btn" :class="{ 'is-armed': deleteArmed === j.id }"
+                        @click="deleteGeneration(j)" title="Delete this clip and its file">
+                  <span x-show="deleteArmed !== j.id">🗑 delete</span>
+                  <span x-show="deleteArmed === j.id" x-cloak>click again</span>
+                </button>
               </div>
             </div>
           </template>
+
+          <!-- Disk usage + prune (needs the latest backend; hidden until it responds).
+               Video files are large, so this is high-value housekeeping. -->
+          <div class="output-disk" x-show="outputStats.loaded && outputStats.count > 0" x-cloak>
+            <span class="output-disk-info">
+              💾 <span x-text="outputStats.count"></span> clip<span x-show="outputStats.count !== 1">s</span>
+              · <span x-text="outputSizeLabel"></span> on disk
+            </span>
+            <span class="output-disk-actions" x-show="outputStats.count > 50">
+              <button class="link-btn" :class="{ 'is-armed': pruneArmed === 'keep50' }" @click="pruneOutputs('keep50')"
+                      title="Delete all but the newest 50 clips">
+                <span x-show="pruneArmed !== 'keep50'">🧹 keep newest 50</span>
+                <span x-show="pruneArmed === 'keep50'" x-cloak>click again</span>
+              </button>
+              <button class="link-btn" :class="{ 'is-armed': pruneArmed === 'old30' }" @click="pruneOutputs('old30')"
+                      title="Delete clips older than 30 days">
+                <span x-show="pruneArmed !== 'old30'">delete &gt; 30 days</span>
+                <span x-show="pruneArmed === 'old30'" x-cloak>click again</span>
+              </button>
+            </span>
+          </div>
         </div>
       </div>
 

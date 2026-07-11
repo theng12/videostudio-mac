@@ -19,7 +19,10 @@ Serves:
 - `/api/generate/jobs/{id}`          → poll one job
 - `/api/generate/jobs/{id}/video`    → fetch the rendered mp4
 - `/api/generate/jobs/{id}/cancel`   → cancel a running job
+- `/api/generate/history/{id}`       → delete one finished clip + its file
 - `/api/generate/stream`             → SSE stream of generation jobs
+- `/api/output/stats`                → outputs-folder size + clip count
+- `/api/output/prune`                → reclaim disk (keep newest N / delete old)
 """
 from __future__ import annotations
 
@@ -112,6 +115,11 @@ class ImportBody(BaseModel):
 
 class RevealBody(BaseModel):
     path: str
+
+
+class PruneBody(BaseModel):
+    keep_last: int = 0            # keep the newest N clips, delete the rest
+    older_than_days: float = 0.0  # or: delete clips older than this many days
 
 
 class SettingsBody(BaseModel):
@@ -674,6 +682,28 @@ def cancel_generation_job(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="job not found or already finished")
     job = gen_manager.get(job_id)
     return {"job": job.serialize() if job else None}
+
+
+@app.delete("/api/generate/history/{job_id}")
+def delete_one_generation(job_id: str) -> dict:
+    """Delete a single FINISHED clip: remove it from history and delete its .mp4
+    from disk. (DELETE .../jobs/{id} only cancels active jobs.)"""
+    if not gen_manager.delete_job(job_id):
+        raise HTTPException(status_code=404, detail="job not found")
+    return {"deleted": job_id}
+
+
+@app.get("/api/output/stats")
+def output_stats() -> dict:
+    """Size + count of generated clips on disk, for the disk-usage display."""
+    return gen_manager.output_stats()
+
+
+@app.post("/api/output/prune")
+def prune_outputs(body: PruneBody) -> dict:
+    """Reclaim disk: keep the newest N (keep_last) OR delete clips older than
+    older_than_days. History entries for deleted files are trimmed too."""
+    return gen_manager.prune_outputs(keep_last=body.keep_last, older_than_days=body.older_than_days)
 
 
 @app.get("/api/generate/stream")

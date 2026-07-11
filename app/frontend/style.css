@@ -131,7 +131,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .job-prompt { font-size: 13px; color: var(--text); }
 .job video { width: 100%; border-radius: 9px; border: 1px solid var(--border); background: #000; }
 .job-err { color: var(--bad); font-size: 12px; white-space: pre-wrap; }
-.job-meta { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.job-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+
+/* two-click armed state for per-clip delete + prune buttons */
+.link-btn.is-armed { color: var(--warn); font-weight: 600; }
+
+/* outputs disk-usage footer */
+.output-disk { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+.output-disk-info { color: var(--muted); font-size: 12px; }
+.output-disk-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 
 .pill { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 20px; background: var(--panel-2); border: 1px solid var(--border); }
 .pill.running { color: var(--accent); border-color: var(--accent); }

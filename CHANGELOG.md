@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.3.0] — 2026-07-10
+
+### Added — Clip management: per-clip reveal/delete, disk management, richer progress
+
+Carries the Voice Studio generator improvements to Video Studio, adapted to its clip model (frontend live on reload; the new endpoints activate after one **Update** — no new Python deps):
+
+- **Per-clip actions** — each finished clip now has **📂 reveal** (show the .mp4 in Finder) and **🗑 delete** (two-click; removes the clip from history and deletes the file). *(Backend: `DELETE /api/generate/history/{id}`.)*
+- **Disk management** — a footer shows how many clips and how much disk the outputs use, with one-click prune ("keep newest 50" / "delete > 30 days"). High-value here since video files are large. *(Backend: `GET /api/output/stats`, `POST /api/output/prune`.)*
+- **Richer progress** — the bar now moves off zero the moment a job starts, and the label reads % · step X/Y · elapsed using the real progress fields.
+- **Friendlier empty state** naming the new player/download/reveal/delete affordances.
+
+### Notes
+- MINOR bump (0.2.8 → 0.3.0). Frontend is live on reload; the endpoints + progress kick need one **Update** (restart) — the UI degrades gracefully until then (disk footer hides; delete/prune show a "run Update" hint).
+
+---
 ## [0.2.8] — 2026-07-10
 
 ### Added — "Open outputs folder" button (+ Clear-history fix)

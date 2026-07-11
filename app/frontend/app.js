@@ -60,6 +60,12 @@ function studio() {
     _toastSeq: 0,
     _doneRepos: {},
 
+    // outputs list: per-clip actions + disk management
+    deleteArmed: null,       // job.id currently armed for a two-click single delete
+    pruneArmed: null,        // prune mode ("keep50" | "old30") armed for a two-click confirm
+    outputStats: { bytes: 0, count: 0, loaded: false },
+    _lastDoneCount: 0,
+
     // ──────── Generate computed ────────
     get cachedModels() {
       return this.models.filter((m) => m.cache && m.cache.state === "cached");
@@ -73,6 +79,9 @@ function studio() {
     get activeDownloads() {
       return this.downloads.filter((d) => ["queued", "running"].includes(d.state));
     },
+    get outputSizeLabel() {
+      return this.fmtBytes(this.outputStats.bytes || 0);
+    },
 
     // ──────── lifecycle ────────
     async init() {
@@ -85,6 +94,7 @@ function studio() {
       this._initRamPlanner();
       this.openDownloadsStream();
       this.openGenerateStream();
+      this.refreshOutputStats();
       setInterval(() => this.refreshHealth(), 8000);
       setInterval(() => this.loadDiagnostics(), 15000);
     },
@@ -157,8 +167,12 @@ function studio() {
     openGenerateStream() {
       const es = new EventSource("/api/generate/stream");
       es.addEventListener("snapshot", (e) => {
-        try { this.genJobs = (JSON.parse(e.data).jobs || []).slice().reverse(); }
-        catch (_) {}
+        try {
+          this.genJobs = (JSON.parse(e.data).jobs || []).slice().reverse();
+          // A finished clip just landed on disk — refresh the disk-usage figure.
+          const done = this.genJobs.filter((j) => j.state === "done").length;
+          if (done !== this._lastDoneCount) { this._lastDoneCount = done; this.refreshOutputStats(); }
+        } catch (_) {}
       });
     },
     _syncDownloadsToModels() {
@@ -522,6 +536,64 @@ function studio() {
       }
     },
     useInGenerate(repo) { this.gen.repo = repo; this.applyModelDefaults(); this.tab = "generate"; },
+
+    /** Delete one finished clip (removes it from history AND deletes the .mp4).
+     *  Two-click confirm — first click arms this row, second deletes. */
+    deleteGeneration(job) {
+      if (this.deleteArmed !== job.id) {
+        this.deleteArmed = job.id;
+        clearTimeout(this._deleteArmTimer);
+        this._deleteArmTimer = setTimeout(() => { this.deleteArmed = null; }, 3000);
+        return;
+      }
+      clearTimeout(this._deleteArmTimer);
+      this.deleteArmed = null;
+      this._doDeleteGeneration(job);
+    },
+    async _doDeleteGeneration(job) {
+      try {
+        const r = await fetch("/api/generate/history/" + encodeURIComponent(job.id), { method: "DELETE" });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        this.genJobs = (this.genJobs || []).filter((j) => j.id !== job.id);
+        this.refreshOutputStats();
+        this.pushToast("Clip deleted.", "info");
+      } catch (e) {
+        this.pushToast("Couldn't delete — run Update once from the Pinokio sidebar for the latest backend.", "error");
+      }
+    },
+
+    // ──────── outputs folder disk usage ────────
+    async refreshOutputStats() {
+      try {
+        const r = await fetch("/api/output/stats");
+        if (!r.ok) return;                         // endpoint not live until next Update
+        const d = await r.json();
+        this.outputStats = { bytes: d.bytes || 0, count: d.count || 0, loaded: true };
+      } catch (_) { /* keep last */ }
+    },
+    /** mode: "keep50" keeps the newest 50; "old30" deletes clips older than 30 days. */
+    async pruneOutputs(mode) {
+      const body = mode === "old30" ? { older_than_days: 30 } : { keep_last: 50 };
+      if (this.pruneArmed !== mode) {
+        this.pruneArmed = mode;
+        clearTimeout(this._pruneArmTimer);
+        this._pruneArmTimer = setTimeout(() => { this.pruneArmed = null; }, 3000);
+        return;
+      }
+      clearTimeout(this._pruneArmTimer);
+      this.pruneArmed = null;
+      try {
+        const r = await fetch("/api/output/prune", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const d = await r.json();
+        await this.refreshOutputStats();
+        this.pushToast(`Pruned ${d.deleted} clip${d.deleted === 1 ? "" : "s"} (${this.fmtBytes(d.freed_bytes || 0)} freed).`, "info");
+      } catch (e) {
+        this.pushToast("Couldn't prune — run Update once from the Pinokio sidebar for the latest backend.", "error");
+      }
+    },
 
     // ──────── Downloads ────────
     async startDownload(repo) {
