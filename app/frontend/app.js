@@ -512,6 +512,15 @@ function studio() {
     },
     async cancelJob(id) { try { await fetch(`/api/generate/jobs/${id}`, { method: "DELETE" }); } catch (_) {} },
     async clearHistory() { try { await fetch("/api/generate/jobs", { method: "DELETE" }); this.genJobs = []; } catch (_) {} },
+    /** Open the outputs folder (all generated clips) in Finder, derived from a job's absolute path. */
+    openOutputsFolder() {
+      const withPath = (this.genJobs || []).find(j => j.output_path);
+      if (withPath && withPath.output_path) {
+        this.revealInFolder(withPath.output_path.replace(/[/\\][^/\\]+$/, ""));
+      } else {
+        this.pushToast({ kind: "info", icon: "📂", title: "No clips yet", body: "Generate a clip first — then this opens the folder with all your videos." });
+      }
+    },
     useInGenerate(repo) { this.gen.repo = repo; this.applyModelDefaults(); this.tab = "generate"; },
 
     // ──────── Downloads ────────

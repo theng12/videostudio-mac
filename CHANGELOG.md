@@ -10,6 +10,16 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.2.8] — 2026-07-10
+
+### Added — "Open outputs folder" button (+ Clear-history fix)
+
+- **Open outputs folder** — new button in the history header that reveals the folder holding every generated clips file in Finder, via the existing `/api/reveal`.
+
+### Notes
+- PATCH bump (0.2.7 → 0.2.8) — frontend only. Live on reload; no restart needed.
+
+---
 ## [0.2.7] — 2026-07-10
 
 ### Fixed — download ETA settle-guard and honest catalog sizes

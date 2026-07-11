@@ -156,6 +156,7 @@
         <div class="gen-output">
           <div class="output-head">
             <h3>Outputs</h3>
+            <button class="link-btn" @click="openOutputsFolder()" x-show="genJobs.length" title="Open the folder with every generated clip in Finder">📂 outputs folder</button>
             <button class="link-btn" @click="clearHistory()" x-show="genJobs.length">clear history</button>
           </div>
           <div class="empty" x-show="genJobs.length === 0">
