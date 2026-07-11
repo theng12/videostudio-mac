@@ -10,6 +10,18 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.4.0] — 2026-07-12
+
+### Added — secure fleet access and capability contract
+
+- Remote API, uploaded media, and generated-video access now requires the automatically shared StudioHub fleet token; loopback Pinokio use remains passwordless.
+- Browser writes are same-origin protected, authenticated browser sessions use an HttpOnly cookie, and remote Studio pages prompt once per tab when a token is needed.
+- Added normalized `GET /api/capabilities` metadata for text-to-video, image-to-video, and video-to-video operation preflight.
+
+### Verification
+
+- Python and JavaScript syntax checks pass. Security-contract tests cover public health/capability routes, protected catalog access, accepted fleet credentials, cross-origin write rejection, and private token permissions.
+
 ## [0.3.1] — 2026-07-12
 
 ### Fixed — honest pipeline readiness and safer media uploads
