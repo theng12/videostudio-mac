@@ -10,6 +10,14 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.4.1] — 2026-07-13
+
+### Fixed — saved fleet credentials apply without restarting Video Studio
+
+- Protected requests now verify against the current owner-only fleet-token file instead of a startup snapshot. Studio Hub credential saves and rotations take effect immediately, and authenticated browser cookies follow the current value.
+
+Verified with a live-rotation middleware regression test plus the full test suite. No launcher, engine, or dependency changes; **Just run Update**.
+
 ## [0.4.0] — 2026-07-12
 
 ### Added — secure fleet access and capability contract

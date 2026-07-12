@@ -1,6 +1,7 @@
 import stat
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -28,7 +29,13 @@ class FleetAuthTests(unittest.TestCase):
         source = fleet_auth.HUB_TOKEN_FILE if fleet_auth.HUB_TOKEN_FILE.exists() else fleet_auth.SHARED_TOKEN_FILE
         self.assertEqual(stat.S_IMODE(source.stat().st_mode), 0o600)
 
+    def test_saved_fleet_token_takes_effect_without_restart(self):
+        with patch.object(fleet_auth, "load_token", return_value="rotated-token"):
+            accepted = TestClient(app, headers={"X-Studio-Token": "rotated-token"})
+            stale = TestClient(app, headers={"X-Studio-Token": FLEET_TOKEN})
+            self.assertEqual(accepted.get("/api/catalog").status_code, 200)
+            self.assertEqual(stale.get("/api/catalog").status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()
-
