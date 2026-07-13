@@ -24,6 +24,15 @@ _LOCK = threading.Lock()
 
 DEFAULTS: dict[str, Any] = {
     "hf_token": "",
+    # Cloud video providers: {"fal": {"key": "...", "paid": false}}. Keys are
+    # secrets — settings.json is chmod 0600 and never returned raw (only a
+    # key_set boolean via /api/providers).
+    "providers": {},
+    # Spend guardrails (USD). 0 / null = no cap. Both scopes enforced together.
+    "spend_caps": {
+        "global": {"daily": 0, "monthly": 0},
+        "per_provider": {},   # {"fal": {"daily": 0, "monthly": 0}}
+    },
 }
 
 _cache: dict[str, Any] = {}

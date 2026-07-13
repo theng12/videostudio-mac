@@ -398,6 +398,53 @@ class VideoManager:
         mode = params.get("mode", "video2video")
         return self._submit(mode, params)
 
+    def submit_cloud(self, mode: str, params: dict, runner) -> VideoJob:
+        """Register a CLOUD job in the same registry the local engine uses, so it
+        shows up in list_jobs / SSE / /video like any other. `runner(job)` does
+        the provider submit→poll→download and sets job.output_path on success.
+
+        Cloud jobs do NOT take _GEN_LOCK (no local GPU) — several can run
+        concurrently, they're just HTTP polling."""
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        job = VideoJob(job_id=uuid.uuid4().hex[:12], mode=mode, params=params, total_steps=0)
+        job.params = {**params, "cloud": True}
+        self._jobs[job.job_id] = job
+        job.thread = threading.Thread(
+            target=self._run_cloud, args=(job, runner), name=f"vid-cloud-{job.job_id}", daemon=True)
+        job.thread.start()
+        return job
+
+    def _run_cloud(self, job: VideoJob, runner) -> None:
+        if job.cancel_event.is_set():
+            job.state = "cancelled"
+            job.finished_at = time.time()
+            self._persist()
+            return
+        job.state = "running"
+        job.started_at = time.time()
+        job.progress = 0.05
+        print(f"[vid] starting cloud {job.mode} {job.job_id}: {job.params.get('repo')}", flush=True)
+        try:
+            runner(job)
+            if job.cancel_event.is_set() or not job.output_path:
+                job.state = "cancelled" if job.cancel_event.is_set() else "error"
+                if job.state == "error" and not job.error:
+                    job.error = "cloud job produced no output"
+            else:
+                job.progress = 1.0
+                job.state = "done"
+                print(f"[vid] done cloud {job.job_id} → {job.output_path}", flush=True)
+        except Exception as e:
+            if job.cancel_event.is_set():
+                job.state = "cancelled"
+            else:
+                job.state = "error"
+                job.error = f"{type(e).__name__}: {e}"
+                print(f"[vid] cloud error {job.job_id}: {job.error}", file=sys.stderr, flush=True)
+        finally:
+            job.finished_at = time.time()
+            self._persist()
+
     def _submit(self, mode: str, params: dict) -> VideoJob:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         job = VideoJob(

@@ -203,6 +203,51 @@ curl -s -X POST "$BASE/api/downloads" \
 
 ---
 
+## Cloud video providers (gateway)
+
+Video Studio is also a **gateway** for cloud video generators. Link a provider
+(fal.ai in v0.5; kie / replicate to follow) and its models appear in the **same**
+`/api/catalog` alongside local ones, with the same generation API — so a client
+like Story Studio connects **once** and gets local **and** cloud models, kept
+current as providers add/deprecate models. See `SPEC.md` for the full design.
+
+- **Link a provider:** Settings → *Cloud video providers* → paste your API key,
+  then enable **paid generation** (nothing bills until both are set).
+- **Spend guardrails:** set **per-provider and global** daily/monthly USD caps
+  (Settings → *Spend guardrails*). Caps reset on the calendar; a generation that
+  would exceed a cap is **blocked before it runs**. Every cloud job's cost is
+  recorded.
+- **Routing:** cloud models carry a `provider:` id (e.g.
+  `fal:fal-ai/kling-video/v2/master/text-to-video`). Generation goes through the
+  **same** endpoints; the gateway submits to the provider, polls, and downloads
+  the clip into `app/output/` — the job/SSE/`/video` lifecycle is identical to a
+  local render.
+
+Provider/spend API:
+
+```bash
+BASE=http://localhost:47872
+
+# List providers (key-set state, paid toggle, model count, spend vs caps)
+curl -s "$BASE/api/providers"
+# Set a provider API key (owner-only; never returned)
+curl -s -X POST "$BASE/api/providers/fal/key"  -H 'Content-Type: application/json' -d '{"key":"YOUR_FAL_KEY"}'
+# Enable paid generation
+curl -s -X POST "$BASE/api/providers/fal/paid" -H 'Content-Type: application/json' -d '{"paid":true}'
+# Spend today/month vs caps + recent records
+curl -s "$BASE/api/spend"
+# Set caps (USD; 0 = no cap)
+curl -s -X POST "$BASE/api/spend/caps" -H 'Content-Type: application/json' \
+  -d '{"global":{"daily":20,"monthly":300},"per_provider":{"fal":{"daily":10,"monthly":150}}}'
+
+# Generate with a cloud model — same endpoint as local
+curl -s -X POST "$BASE/api/generate/txt2video" -H 'Content-Type: application/json' \
+  -d '{"repo":"fal:fal-ai/kling-video/v2/master/text-to-video","prompt":"a red kite over the sea","duration":5}'
+```
+
+> The fal model list lives in `app/backend/providers/fal_models.json` — hand-edit
+> it to add models or correct paths/prices (verify against <https://fal.ai/models>).
+
 ## Notes & limitations
 
 - **Apple Silicon only** (`darwin` / `arm64`). The engine targets the MPS

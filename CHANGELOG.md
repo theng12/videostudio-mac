@@ -10,6 +10,19 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.5.0] — 2026-07-13
+
+### Added — cloud video provider gateway (fal.ai) with spend guardrails
+
+Video Studio can now act as a **gateway for cloud video generators**, so a client like Story Studio links to it once and gets local **and** cloud models in one live catalog. See `SPEC.md`.
+
+- **fal.ai provider** — curated fal video models (Kling, Hailuo, Veo 3, Seedance, LTX) appear in `/api/catalog` alongside local ones, each tagged `is_cloud` + `hub_modality:video` + `provider` + `cost_tier:paid-cloud` so Studio Hub sorts them into its cloud lane automatically. The model list is hand-editable at `app/backend/providers/fal_models.json`.
+- **Same generation API** — a `provider:`-prefixed model id (e.g. `fal:fal-ai/kling-video/v2/master/...`) routes through the existing `/api/generate/txt2video` + `video2video`; the gateway submits to the provider, polls, and downloads the clip into `app/output/`, so the job/SSE/`/video` lifecycle is identical to a local render. Local generation is untouched.
+- **Spend guardrails (real money)** — per-provider **and** global daily/monthly USD caps (calendar reset), enforced together with a pre-submit gate that blocks a generation before it bills. Every cloud job's cost is recorded in `spend.db`. New Settings UI to link keys, toggle paid, set caps, and watch live spend.
+- **New endpoints:** `/api/providers`, `/api/providers/{key}/{key,paid,refresh}`, `/api/spend`, `/api/spend/caps`.
+
+No new Python dependencies (cloud HTTP uses the stdlib), so **just run Update** and restart — no reinstall. Verified: 8 new tests (routing, catalog-merge shape, spend caps/booking/reset) plus a full app-boot check. A live fal generation needs your own fal key + credit to confirm end to end.
+
 ## [0.4.1] — 2026-07-13
 
 ### Fixed — saved fleet credentials apply without restarting Video Studio

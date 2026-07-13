@@ -1,0 +1,82 @@
+{
+  "_comment": "Curated fal.ai video models. fal has no clean public model-list API, so this is the Phase-1 source of truth and is meant to be hand-edited (or replaced by live-listing in Phase 2). VERIFY each `provider_model` path + price against https://fal.ai/models before trusting costs — paths and pricing drift. price_unit is 'per_second' or 'per_video'; price_usd is USD for that unit.",
+  "models": [
+    {
+      "provider_model": "fal-ai/kling-video/v2/master/text-to-video",
+      "label": "Kling 2 Master (text→video)",
+      "capabilities": ["txt2video"],
+      "summary": "Kuaishou Kling 2 Master — high-motion, cinematic text-to-video.",
+      "max_duration_s": 10,
+      "resolutions": ["720p", "1080p"],
+      "aspect_ratios": ["16:9", "9:16", "1:1"],
+      "price_unit": "per_second",
+      "price_usd": 0.28
+    },
+    {
+      "provider_model": "fal-ai/kling-video/v2/master/image-to-video",
+      "label": "Kling 2 Master (image→video)",
+      "capabilities": ["img2video"],
+      "summary": "Kling 2 Master image-to-video — animate a still with strong motion.",
+      "max_duration_s": 10,
+      "resolutions": ["720p", "1080p"],
+      "aspect_ratios": ["16:9", "9:16", "1:1"],
+      "price_unit": "per_second",
+      "price_usd": 0.28
+    },
+    {
+      "provider_model": "fal-ai/minimax/hailuo-02/standard/text-to-video",
+      "label": "Hailuo 02 Standard (text→video)",
+      "capabilities": ["txt2video"],
+      "summary": "MiniMax Hailuo 02 — strong prompt adherence, good value.",
+      "max_duration_s": 6,
+      "resolutions": ["768p"],
+      "aspect_ratios": ["16:9", "9:16"],
+      "price_unit": "per_video",
+      "price_usd": 0.28
+    },
+    {
+      "provider_model": "fal-ai/minimax/hailuo-02/standard/image-to-video",
+      "label": "Hailuo 02 Standard (image→video)",
+      "capabilities": ["img2video"],
+      "summary": "MiniMax Hailuo 02 image-to-video.",
+      "max_duration_s": 6,
+      "resolutions": ["768p"],
+      "aspect_ratios": ["16:9", "9:16"],
+      "price_unit": "per_video",
+      "price_usd": 0.28
+    },
+    {
+      "provider_model": "fal-ai/veo3",
+      "label": "Veo 3 (text→video)",
+      "capabilities": ["txt2video"],
+      "summary": "Google Veo 3 — top-tier quality with native audio. Premium price.",
+      "max_duration_s": 8,
+      "resolutions": ["720p", "1080p"],
+      "aspect_ratios": ["16:9"],
+      "price_unit": "per_second",
+      "price_usd": 0.75
+    },
+    {
+      "provider_model": "fal-ai/bytedance/seedance/v1/pro/image-to-video",
+      "label": "Seedance 1 Pro (image→video)",
+      "capabilities": ["img2video"],
+      "summary": "ByteDance Seedance (Seedream video) 1 Pro — image-to-video.",
+      "max_duration_s": 10,
+      "resolutions": ["720p", "1080p"],
+      "aspect_ratios": ["16:9", "9:16", "1:1"],
+      "price_unit": "per_second",
+      "price_usd": 0.15
+    },
+    {
+      "provider_model": "fal-ai/ltx-video-13b-distilled",
+      "label": "LTX Video 13B Distilled (text→video)",
+      "capabilities": ["txt2video"],
+      "summary": "Lightricks LTX-Video (cloud) — fast and inexpensive.",
+      "max_duration_s": 5,
+      "resolutions": ["768p"],
+      "aspect_ratios": ["16:9", "9:16", "1:1"],
+      "price_unit": "per_video",
+      "price_usd": 0.04
+    }
+  ]
+}

@@ -56,6 +56,14 @@ function studio() {
     },
     conn: { bind_port: 47872 },
 
+    // cloud providers + spend guardrails
+    providers: [],
+    spend: null,
+    providerKeyInput: {},
+    caps: { global: { daily: 0, monthly: 0 } },
+    capsProvider: {},
+    capsMsg: "", capsMsgKind: "info",
+
     toasts: [],
     _toastSeq: 0,
     _doneRepos: {},
@@ -68,7 +76,11 @@ function studio() {
 
     // ──────── Generate computed ────────
     get cachedModels() {
-      return this.models.filter((m) => m.cache && m.cache.state === "cached");
+      // Cloud models are always usable (no download); local ones must be cached.
+      return this.models.filter((m) => m.is_cloud || (m.cache && m.cache.state === "cached"));
+    },
+    get anyCloudUsable() {
+      return this.models.some((m) => m.is_cloud && m.key_set && m.paid_on);
     },
     get selectedModel() {
       return this.models.find((m) => m.repo === this.gen.repo) || null;
@@ -95,8 +107,65 @@ function studio() {
       this.openDownloadsStream();
       this.openGenerateStream();
       this.refreshOutputStats();
+      this.loadProviders().then(() => this.loadSpend());
       setInterval(() => this.refreshHealth(), 8000);
       setInterval(() => this.loadDiagnostics(), 15000);
+      setInterval(() => { if (this.tab === "settings") this.loadSpend(); }, 15000);
+    },
+
+    // ──────── cloud providers + spend ────────
+    async loadProviders() {
+      try {
+        const d = await (await fetch("/api/providers")).json();
+        this.providers = d.providers || [];
+        for (const p of this.providers) if (!(p.key in this.providerKeyInput)) this.providerKeyInput[p.key] = "";
+      } catch (_) {}
+    },
+    async loadSpend() {
+      try {
+        const d = await (await fetch("/api/spend")).json();
+        this.spend = d;
+        this.caps.global = { daily: d.caps?.global?.daily || 0, monthly: d.caps?.global?.monthly || 0 };
+        const pp = d.caps?.per_provider || {};
+        const cp = {};
+        for (const p of this.providers) { const v = pp[p.key] || {}; cp[p.key] = { daily: v.daily || 0, monthly: v.monthly || 0 }; }
+        this.capsProvider = cp;
+      } catch (_) {}
+    },
+    async saveProviderKey(key) {
+      try {
+        const r = await fetch(`/api/providers/${key}/key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: this.providerKeyInput[key] || "" }) });
+        const d = await r.json(); this.providers = d.providers || []; this.providerKeyInput[key] = "";
+        this.pushToast(`Saved ${key} key`, "info"); this.loadCatalog();
+      } catch (e) { this.pushToast("Save failed: " + e, "error"); }
+    },
+    async toggleProviderPaid(key, on) {
+      try {
+        const r = await fetch(`/api/providers/${key}/paid`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: on }) });
+        const d = await r.json(); this.providers = d.providers || []; this.loadCatalog();
+      } catch (e) { this.pushToast("Update failed: " + e, "error"); }
+    },
+    async refreshProvider(key) {
+      try {
+        const d = await (await fetch(`/api/providers/${key}/refresh`, { method: "POST" })).json();
+        this.pushToast(`${key}: ${d.model_count} models`, "info");
+        await this.loadProviders(); this.loadCatalog();
+      } catch (e) { this.pushToast("Refresh failed: " + e, "error"); }
+    },
+    async saveCaps() {
+      try {
+        const body = { global: this.caps.global, per_provider: this.capsProvider };
+        const d = await (await fetch("/api/spend/caps", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+        this.spend = d; this.capsMsg = "Saved"; this.capsMsgKind = "success"; this.loadProviders();
+        setTimeout(() => { this.capsMsg = ""; }, 2500);
+      } catch (e) { this.capsMsg = "Save failed"; this.capsMsgKind = "error"; }
+    },
+    cloudPriceLabel(m) {
+      if (!m.price || m.price.usd == null) return "usage-based";
+      return "$" + m.price.usd + (m.price.unit === "per_second" ? "/sec" : "/video");
+    },
+    cloudStatusLabel(m) {
+      return m.status === "deprecated" ? "deprecated" : (m.status === "new" ? "new" : "cloud");
     },
 
     async refreshHealth() {

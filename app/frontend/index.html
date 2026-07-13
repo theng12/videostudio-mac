@@ -62,20 +62,20 @@
         </div>
       </header>
 
-      <!-- engine-not-installed banner -->
-      <div class="banner warn" x-show="!gen.available">
+      <!-- engine-not-installed banner (local models only; cloud still works) -->
+      <div class="banner warn" x-show="!gen.available && !anyCloudUsable">
         <strong>Video engine not installed.</strong>
         Click <em>Install Generation</em> in the Pinokio sidebar to install PyTorch + Diffusers,
-        then reload. You can still browse Models and start downloads now.
+        then reload. You can still browse Models, start downloads, or link a cloud provider in Settings.
       </div>
 
-      <!-- no cached models -->
-      <div class="banner info" x-show="gen.available && cachedModels.length === 0">
-        No models downloaded yet. Go to the <a href="#" @click.prevent="tab='models'">Models</a> tab
-        and download one (e.g. <strong>LTX-Video</strong> — the lightest) before generating.
+      <!-- no usable models -->
+      <div class="banner info" x-show="cachedModels.length === 0">
+        No models ready yet. <a href="#" @click.prevent="tab='models'">Download</a> a local model
+        (e.g. <strong>LTX-Video</strong>), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
       </div>
 
-      <div class="gen-grid" x-show="gen.available && cachedModels.length > 0">
+      <div class="gen-grid" x-show="cachedModels.length > 0">
         <!-- left: controls -->
         <div class="gen-controls card">
           <label class="field">
@@ -369,7 +369,10 @@
                       <div class="variant-identity">
                         <div class="variant-title-line">
                           <h3 x-text="m.variant_label || m.label"></h3>
-                          <span class="variant-role" x-text="m.role" x-show="m.role"></span>
+                          <span class="variant-role" x-text="m.role" x-show="m.role && !m.is_cloud"></span>
+                          <span class="variant-role" x-show="m.is_cloud" x-text="m.provider"></span>
+                          <span class="variant-role" x-show="m.status==='new'">New</span>
+                          <span class="gated" x-show="m.status==='deprecated'">Deprecated</span>
                           <span class="gated" x-show="m.gated">Gated</span>
                         </div>
                         <div class="variant-capabilities">
@@ -380,17 +383,37 @@
                         <strong x-text="modelResolution(m)"></strong><small x-text="modelClipProfile(m)"></small>
                       </div>
                       <div class="variant-spec" data-label="Download">
-                        <strong x-text="formatGb(m.size_gb)"></strong><small x-text="cacheChipLabel(m.cache.state)"></small>
+                        <template x-if="!m.is_cloud">
+                          <div><strong x-text="formatGb(m.size_gb)"></strong><small x-text="cacheChipLabel(m.cache.state)"></small></div>
+                        </template>
+                        <template x-if="m.is_cloud">
+                          <div><strong x-text="cloudPriceLabel(m)"></strong><small x-text="cloudStatusLabel(m)"></small></div>
+                        </template>
                       </div>
                       <div class="variant-spec" data-label="Memory">
-                        <strong x-text="m.min_unified_memory_gb + ' GB+'"></strong>
-                        <span class="fit-dot" :class="'fit-' + fitFor(m.min_unified_memory_gb).state"
-                              :title="fitFor(m.min_unified_memory_gb).hint" x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span>
+                        <template x-if="!m.is_cloud">
+                          <div><strong x-text="m.min_unified_memory_gb + ' GB+'"></strong>
+                          <span class="fit-dot" :class="'fit-' + fitFor(m.min_unified_memory_gb).state"
+                                :title="fitFor(m.min_unified_memory_gb).hint" x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span></div>
+                        </template>
+                        <template x-if="m.is_cloud">
+                          <div><strong>Cloud</strong><small>no local RAM</small></div>
+                        </template>
                       </div>
                       <div class="variant-action">
-                        <button class="primary" x-show="m.cache.state!=='cached' && !m.active_download" @click="startDownload(m.repo)">Download</button>
-                        <button class="ghost" x-show="m.active_download" @click="cancelDownload(m.active_download.id)">Cancel</button>
-                        <button class="primary" x-show="m.cache.state==='cached'" @click="useInGenerate(m.repo)">Use model</button>
+                        <template x-if="!m.is_cloud">
+                          <div>
+                            <button class="primary" x-show="m.cache.state!=='cached' && !m.active_download" @click="startDownload(m.repo)">Download</button>
+                            <button class="ghost" x-show="m.active_download" @click="cancelDownload(m.active_download.id)">Cancel</button>
+                            <button class="primary" x-show="m.cache.state==='cached'" @click="useInGenerate(m.repo)">Use model</button>
+                          </div>
+                        </template>
+                        <template x-if="m.is_cloud">
+                          <div>
+                            <button class="primary" x-show="m.key_set && m.paid_on" @click="useInGenerate(m.repo)">Use model</button>
+                            <button class="ghost" x-show="!(m.key_set && m.paid_on)" @click="tab='settings'">Link in Settings</button>
+                          </div>
+                        </template>
                       </div>
                       <div class="variant-progress" x-show="m.active_download">
                         <div class="progress"><div class="bar" :style="`width:${Math.round(m.active_download?.percent||0)}%`"></div></div>
@@ -472,6 +495,55 @@
           <span class="settings-msg" :class="settings.messageKind" x-text="settings.message"></span>
         </div>
         <p class="hint" x-show="settings.hf_token_set">A token is currently saved (<span x-text="settings.hf_token_masked"></span>).</p>
+      </div>
+
+      <div class="card settings-card">
+        <h3>Cloud video providers</h3>
+        <p class="hint">Link a provider to expose its cloud video models in the catalog. Keys are stored locally (chmod 0600) and never shown. Generation only bills when a key is set <strong>and</strong> paid is enabled.</p>
+        <template x-for="p in providers" :key="p.key">
+          <div style="border-top:1px solid var(--border,#2a2f3a);padding:12px 0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <strong x-text="p.name"></strong>
+              <span class="variant-role" x-text="p.model_count + ' models'"></span>
+              <span class="variant-role" x-show="p.key_set" style="color:#3fb950">key set</span>
+              <span class="variant-role" x-show="p.paid" style="color:#e0a83a">paid on</span>
+              <a class="link-accent" :href="p.docs_url" target="_blank" style="margin-left:auto">models ↗</a>
+            </div>
+            <div class="token-row" style="margin-top:8px">
+              <input type="password" x-model="providerKeyInput[p.key]" :placeholder="p.key_set ? '•••••• saved — paste to replace' : 'API key'">
+              <button class="ghost" @click="saveProviderKey(p.key)">Save</button>
+            </div>
+            <div class="settings-actions" style="margin-top:8px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+                <input type="checkbox" :checked="p.paid" @change="toggleProviderPaid(p.key, $event.target.checked)"> Enable paid generation
+              </label>
+              <button class="link-btn" @click="refreshProvider(p.key)">Refresh models</button>
+            </div>
+            <p class="hint">Spend — today <b x-text="'$' + (p.spend?.today || 0).toFixed(2)"></b><span x-show="p.spend?.cap_daily"> / $<span x-text="(p.spend.cap_daily||0).toFixed(2)"></span></span> · month <b x-text="'$' + (p.spend?.month || 0).toFixed(2)"></b><span x-show="p.spend?.cap_monthly"> / $<span x-text="(p.spend.cap_monthly||0).toFixed(2)"></span></span></p>
+          </div>
+        </template>
+        <p class="hint" x-show="!providers.length">No providers available.</p>
+      </div>
+
+      <div class="card settings-card">
+        <h3>Spend guardrails</h3>
+        <p class="hint">Caps are USD and reset on the calendar (daily at midnight, monthly on the 1st). 0 = no cap. Per-provider and global caps are enforced together — the tighter one wins. A generation that would exceed a cap is blocked <em>before</em> it runs.</p>
+        <div class="settings-actions" style="flex-wrap:wrap;gap:12px">
+          <label class="field" style="max-width:140px"><span>Global daily $</span><input type="number" min="0" step="1" x-model.number="caps.global.daily"></label>
+          <label class="field" style="max-width:140px"><span>Global monthly $</span><input type="number" min="0" step="1" x-model.number="caps.global.monthly"></label>
+        </div>
+        <template x-for="p in providers" :key="'cap-' + p.key">
+          <div class="settings-actions" style="flex-wrap:wrap;gap:12px;margin-top:6px" x-show="capsProvider[p.key]">
+            <span style="min-width:56px;font-size:13px" x-text="p.name"></span>
+            <label class="field" style="max-width:130px"><span>Daily $</span><input type="number" min="0" step="1" x-model.number="capsProvider[p.key].daily"></label>
+            <label class="field" style="max-width:130px"><span>Monthly $</span><input type="number" min="0" step="1" x-model.number="capsProvider[p.key].monthly"></label>
+          </div>
+        </template>
+        <div class="settings-actions" style="margin-top:10px">
+          <button class="primary" @click="saveCaps()">Save caps</button>
+          <span class="settings-msg" :class="capsMsgKind" x-text="capsMsg"></span>
+        </div>
+        <p class="hint" x-show="spend">Total cloud spend — today <b x-text="'$' + ((spend?.global?.today) || 0).toFixed(2)"></b>, this month <b x-text="'$' + ((spend?.global?.month) || 0).toFixed(2)"></b>.</p>
       </div>
 
       <div class="card settings-card">
