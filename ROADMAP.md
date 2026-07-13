@@ -18,27 +18,41 @@ gets local **and** cloud models in one live catalog. Full design: [`SPEC.md`](SP
 - Settings UI — link key, paid toggle, caps, live spend; cloud models render with provider/new/deprecated badges and work without the local engine.
 - Tests — `app/tests/test_cloud.py` (8, passing) + full app-boot check.
 
-## ⚠️ Do first in the next session — live verification
+## ✅ Live fal verification — DONE (2026-07-14)
 
-Phase 1 is built + unit-tested but **not run against real fal** (needs a key + credit):
+Real fal queue submit → poll → result download completed with
+`fal:fal-ai/ltx-video-13b-distilled`. The gateway produced a valid 5.04-second
+MP4, served it through the normal `/video` endpoint, and reconciled the $0.04
+estimate in the spend ledger.
 
-1. Update + restart → Settings → paste fal key → enable paid → set caps → generate.
-2. **Verify/correct fal model paths + prices** in `providers/fal_models.json` against <https://fal.ai/models> (curated; some are best-guess).
-3. If a model's result JSON differs, adjust `_extract_video_url()` in `providers/fal.py`.
+## ✅ Phase 2 — DONE (v0.6.0)
 
-## 🔜 Phase 2 — breadth + freshness
+- **Kie.ai + Replicate adapters** use the same `VideoProvider` lifecycle as fal.
+- **Live model listing + persistent TTL cache** augments curated Replicate entries
+  from its provider collection; failed refreshes retain the last good snapshot.
+- **Deprecation flow** diffs refreshes, marks models `new` / `deprecated`, keeps
+  deprecated entries visible for **30 days**, then hides them.
+- **Self-healing recovery** persists provider task IDs immediately after submit,
+  retries polling/result downloads with bounded backoff instead of failing on a
+  local timeout, and re-attaches stopped pollers via startup + watchdog repair.
+  A manual repair endpoint/UI action always targets the saved task and can never
+  submit a duplicate cloud generation.
+  Submission intent is persisted before the paid request; an ambiguous submit
+  response blocks new jobs for that provider instead of risking a duplicate.
+- **Billing safety** now enforces the paid toggle server-side and blocks models
+  whose price cannot be verified.
 
-- **kie + replicate** adapters (same `VideoProvider` interface, ~1 file each).
-- **Live model-listing** with a TTL cache — new module `catalog_sync.py`; augments/replaces the curated JSON where the provider has a models API.
-- **Deprecation flow** — diff on refresh → mark `new` / `deprecated`; keep deprecated visible **30 days** then hide (SPEC §6). Backend fields (`status`, `deprecated_at`) already exist; wire the diff + background refresh.
-- Persist in-flight cloud jobs so pollers **re-attach after a restart** (today an in-flight cloud job is lost on restart).
+## ✅ Phase 3 — DONE (v0.6.0)
 
-## 🎨 Phase 3 — polish
-
-- Show the per-generation **cost estimate in the Generate tab** before submit (`estimate_usd` is already returned).
-- Spend **history charts** in Settings.
-- **Capability / duration / resolution filters** in the model picker.
-- Reconcile **actual vs. estimated** cost (today actual = estimate).
+- The Generate tab shows a live **provider cost estimate before submit**, with
+  paid/key/verified-price readiness and cap enforcement kept as hard gates.
+- Settings includes a **14-day spend chart** with per-provider breakdowns.
+- The generation model picker has **capability, minimum-duration, and resolution
+  filters**, plus cloud-native duration/resolution/aspect controls.
+- Per-second jobs reconcile the ledger from the downloaded MP4's actual duration;
+  fixed per-video prices remain exact. The estimate is booked as soon as the
+  provider completes so a temporary result-download failure never releases spent
+  credits from the guardrail.
 
 ## 🤝 Companion — Studio Hub (separate session)
 

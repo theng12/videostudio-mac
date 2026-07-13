@@ -33,9 +33,11 @@ function studio() {
       negativePrompt: "",
       frames: 97, fps: 24, steps: 40, guidance: 3.0,
       width: 704, height: 480, seed: -1, strength: 0.7,
+      duration: 5, resolution: "", aspectRatio: "",
       inputFile: null, inputUrl: "", inputName: "",
       submitting: false,
     },
+    genFilters: { capability: "all", minDuration: 0, resolution: "all" },
 
     // Models-tab library filters
     modelFilters: {
@@ -60,6 +62,8 @@ function studio() {
     providers: [],
     spend: null,
     providerKeyInput: {},
+    providerSaving: {},
+    providerMsg: {},
     caps: { global: { daily: 0, monthly: 0 } },
     capsProvider: {},
     capsMsg: "", capsMsgKind: "info",
@@ -94,6 +98,60 @@ function studio() {
     get outputSizeLabel() {
       return this.fmtBytes(this.outputStats.bytes || 0);
     },
+    get generationResolutionOptions() {
+      const values = new Set();
+      for (const m of this.cachedModels) {
+        for (const value of (m.resolutions || [])) values.add(value);
+        const d = m.video_defaults || {};
+        if (d.width && d.height) values.add(`${d.width}×${d.height}`);
+      }
+      return Array.from(values).sort();
+    },
+    get generationModels() {
+      const f = this.genFilters;
+      return this.cachedModels.filter((m) => {
+        if (f.capability !== "all" && !(m.capabilities || []).includes(f.capability)) return false;
+        const duration = m.is_cloud ? Number(m.max_duration_s || 0) : this.modelDurationSeconds(m);
+        if (Number(f.minDuration || 0) > 0 && duration < Number(f.minDuration)) return false;
+        if (f.resolution !== "all") {
+          const values = new Set(m.resolutions || []);
+          const d = m.video_defaults || {};
+          if (d.width && d.height) values.add(`${d.width}×${d.height}`);
+          if (!values.has(f.resolution)) return false;
+        }
+        return true;
+      });
+    },
+    get estimatedCloudCost() {
+      const m = this.selectedModel;
+      if (!m?.is_cloud || !m.price || m.price.usd == null) return null;
+      if (m.price.unit === "per_second") return Math.round(Number(m.price.usd) * Number(this.gen.duration || 0) * 10000) / 10000;
+      if (m.price.unit === "per_video") return Number(m.price.usd);
+      return null;
+    },
+    get cloudCapBlockMessage() {
+      const m = this.selectedModel;
+      const estimate = this.estimatedCloudCost;
+      if (!m?.is_cloud || estimate == null) return "";
+      if (!this.spend) return "Loading spend guardrails…";
+      const global = this.spend.global || {};
+      const provider = (this.spend.per_provider || {})[m.provider] || {};
+      const checks = [
+        ["global daily", global.today, global.cap_daily],
+        ["global monthly", global.month, global.cap_monthly],
+        [`${m.provider} daily`, provider.today, provider.cap_daily],
+        [`${m.provider} monthly`, provider.month, provider.cap_monthly],
+      ];
+      for (const [label, current, cap] of checks) {
+        if (Number(cap || 0) > 0 && Number(current || 0) + estimate > Number(cap) + 1e-9) {
+          return `${label} cap blocks this job: $${Number(current || 0).toFixed(2)} spent + $${estimate.toFixed(4)} estimate exceeds $${Number(cap).toFixed(2)}.`;
+        }
+      }
+      return "";
+    },
+    get spendHistoryMax() {
+      return Math.max(0.01, ...(this.spend?.daily_history || []).map((d) => Number(d.total || 0)));
+    },
 
     // ──────── lifecycle ────────
     async init() {
@@ -117,8 +175,19 @@ function studio() {
     async loadProviders() {
       try {
         const d = await (await fetch("/api/providers")).json();
-        this.providers = d.providers || [];
-        for (const p of this.providers) if (!(p.key in this.providerKeyInput)) this.providerKeyInput[p.key] = "";
+        const providers = d.providers || [];
+        // Build every provider-keyed object before exposing the provider rows to
+        // Alpine. Otherwise x-for can render a row while capsProvider[p.key] is
+        // still undefined, which aborts expressions elsewhere in Settings.
+        const keyInput = { ...this.providerKeyInput };
+        const capsProvider = { ...this.capsProvider };
+        for (const p of providers) {
+          if (!(p.key in keyInput)) keyInput[p.key] = "";
+          if (!(p.key in capsProvider)) capsProvider[p.key] = { daily: 0, monthly: 0 };
+        }
+        this.providerKeyInput = keyInput;
+        this.capsProvider = capsProvider;
+        this.providers = providers;
       } catch (_) {}
     },
     async loadSpend() {
@@ -133,17 +202,45 @@ function studio() {
       } catch (_) {}
     },
     async saveProviderKey(key) {
+      const value = (this.providerKeyInput[key] || "").trim();
+      const existing = this.providers.find((p) => p.key === key);
+      if (!value) {
+        this.providerMsg = { ...this.providerMsg,
+          [key]: existing?.key_set ? "Paste a replacement key first." : "Paste an API key first." };
+        return;
+      }
+      this.providerSaving = { ...this.providerSaving, [key]: true };
+      this.providerMsg = { ...this.providerMsg, [key]: "Saving…" };
       try {
-        const r = await fetch(`/api/providers/${key}/key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: this.providerKeyInput[key] || "" }) });
-        const d = await r.json(); this.providers = d.providers || []; this.providerKeyInput[key] = "";
-        this.pushToast(`Saved ${key} key`, "info"); this.loadCatalog();
-      } catch (e) { this.pushToast("Save failed: " + e, "error"); }
+        const r = await fetch(`/api/providers/${key}/key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: value }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        this.providers = d.providers || [];
+        this.providerKeyInput = { ...this.providerKeyInput, [key]: "" };
+        this.providerMsg = { ...this.providerMsg, [key]: "Key saved." };
+        this.pushToast(`Saved ${key} key`, "success");
+        this.loadCatalog();
+      } catch (e) {
+        this.providerMsg = { ...this.providerMsg, [key]: "Save failed: " + e };
+        this.pushToast("Save failed: " + e, "error");
+      } finally {
+        this.providerSaving = { ...this.providerSaving, [key]: false };
+      }
     },
     async toggleProviderPaid(key, on) {
+      this.providerMsg = { ...this.providerMsg, [key]: "Updating…" };
       try {
         const r = await fetch(`/api/providers/${key}/paid`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: on }) });
-        const d = await r.json(); this.providers = d.providers || []; this.loadCatalog();
-      } catch (e) { this.pushToast("Update failed: " + e, "error"); }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        this.providers = d.providers || [];
+        this.providerMsg = { ...this.providerMsg, [key]: on ? "Paid generation enabled." : "Paid generation disabled." };
+        this.loadCatalog();
+      } catch (e) {
+        this.providerMsg = { ...this.providerMsg, [key]: "Update failed: " + e };
+        this.pushToast("Update failed: " + e, "error");
+        await this.loadProviders();
+      }
     },
     async refreshProvider(key) {
       try {
@@ -503,6 +600,13 @@ function studio() {
     formatDuration(seconds) {
       return seconds >= 10 ? `${Math.round(seconds)} sec` : `${seconds.toFixed(1)} sec`;
     },
+    spendDayLabel(day) {
+      return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    },
+    spendDayTitle(day) {
+      const parts = Object.entries(day.providers || {}).map(([provider, usd]) => `${provider}: $${Number(usd).toFixed(4)}`);
+      return `${day.day} · $${Number(day.total || 0).toFixed(4)}${parts.length ? " · " + parts.join(" · ") : ""}`;
+    },
     modelClipProfile(model) {
       const d = model.video_defaults || {};
       return `${this.formatDuration(this.modelDurationSeconds(model))} · ${d.frames || "—"} frames · ${d.fps || "—"} fps`;
@@ -531,6 +635,12 @@ function studio() {
     // ──────── Generate ────────
     modeLabel(cap) { return { txt2video: "Text → Video", img2video: "Image → Video", video2video: "Video → Video" }[cap] || cap; },
     onModelChange() { this.applyModelDefaults(); },
+    onGenerationFilterChange() {
+      if (!this.generationModels.some((m) => m.repo === this.gen.repo)) {
+        this.gen.repo = this.generationModels[0]?.repo || "";
+        this.applyModelDefaults();
+      }
+    },
     applyModelDefaults() {
       const m = this.selectedModel; if (!m) return;
       const d = m.video_defaults || {};
@@ -540,22 +650,41 @@ function studio() {
       this.gen.guidance = d.guidance ?? this.gen.guidance;
       this.gen.width = d.width ?? this.gen.width;
       this.gen.height = d.height ?? this.gen.height;
+      if (m.is_cloud) {
+        this.gen.duration = Math.min(Number(m.max_duration_s || 5), 5);
+        this.gen.resolution = (m.resolutions || [])[0] || "";
+        this.gen.aspectRatio = (m.aspect_ratios || [])[0] || "";
+      }
       if (!m.capabilities.includes(this.gen.mode)) this.gen.mode = m.capabilities[0];
     },
     frameHint() {
       const m = this.selectedModel; if (!m) return "";
+      if (m.is_cloud) {
+        if (this.estimatedCloudCost == null) return "This cloud model has no verified price and cannot be submitted yet.";
+        const reconciliation = m.price?.unit === "per_second"
+          ? "Final cost is reconciled from the downloaded clip duration."
+          : "This model uses a fixed per-video price.";
+        return `Estimated provider cost: $${this.estimatedCloudCost.toFixed(4)}. ${reconciliation}`;
+      }
       const base = { "ltx-video": 8, "wan22": 4, "hunyuanvideo": 4, "cogvideox": 8 }[m.family] || 8;
       return `Frames are rounded to ${base}·n+1 for this model. Bigger frames/steps = much longer generation.`;
     },
     get canSubmit() {
       if (this.gen.submitting || !this.gen.repo || !this.gen.prompt.trim()) return false;
-      if (!this.isModelReady(this.gen.repo)) return false;
+      if (this.selectedModel?.is_cloud) {
+        if (!this.selectedModel.key_set || !this.selectedModel.paid_on || this.estimatedCloudCost == null || this.cloudCapBlockMessage) return false;
+      } else if (!this.isModelReady(this.gen.repo)) return false;
       if (this.gen.mode !== "txt2video" && !this.gen.inputFile) return false;
       return true;
     },
     get submitHint() {
       if (!this.gen.repo) return "Choose a downloaded model.";
-      if (!this.isModelReady(this.gen.repo)) return "This model's video pipeline is not ready. Run Update or reinstall Generation.";
+      if (this.selectedModel?.is_cloud) {
+        if (!this.selectedModel.key_set) return "Add this provider's API key in Settings.";
+        if (!this.selectedModel.paid_on) return "Enable paid generation for this provider in Settings.";
+        if (this.estimatedCloudCost == null) return "This cloud model has no verified price and is blocked for safety.";
+        if (this.cloudCapBlockMessage) return this.cloudCapBlockMessage;
+      } else if (!this.isModelReady(this.gen.repo)) return "This model's video pipeline is not ready. Run Update or reinstall Generation.";
       if (!this.gen.prompt.trim()) return "Enter a prompt to continue.";
       if (this.gen.mode !== "txt2video" && !this.gen.inputFile) {
         return "Choose an input " + (this.gen.mode === "img2video" ? "image." : "video.");
@@ -596,6 +725,9 @@ function studio() {
               repo: this.gen.repo, prompt: this.gen.prompt, negative_prompt: this.gen.negativePrompt,
               width: this.gen.width, height: this.gen.height, frames: this.gen.frames,
               fps: this.gen.fps, steps: this.gen.steps, guidance: this.gen.guidance, seed: this.gen.seed,
+              duration: this.selectedModel?.is_cloud ? this.gen.duration : null,
+              resolution: this.selectedModel?.is_cloud ? (this.gen.resolution || null) : null,
+              aspect_ratio: this.selectedModel?.is_cloud ? (this.gen.aspectRatio || null) : null,
             }),
           });
         } else {
@@ -609,6 +741,11 @@ function studio() {
           fd.append("prompt", this.gen.prompt); fd.append("negative_prompt", this.gen.negativePrompt);
           fd.append("frames", this.gen.frames); fd.append("fps", this.gen.fps);
           fd.append("steps", this.gen.steps); fd.append("guidance", this.gen.guidance); fd.append("seed", this.gen.seed);
+          if (this.selectedModel?.is_cloud) {
+            fd.append("duration", this.gen.duration);
+            if (this.gen.resolution) fd.append("resolution", this.gen.resolution);
+            if (this.gen.aspectRatio) fd.append("aspect_ratio", this.gen.aspectRatio);
+          }
           if (this.gen.mode !== "video2video") { fd.append("width", this.gen.width); fd.append("height", this.gen.height); }
           else { fd.append("strength", this.gen.strength); }
           res = await fetch("/api/generate/video2video", { method: "POST", body: fd });
@@ -626,6 +763,16 @@ function studio() {
       }
     },
     async cancelJob(id) { try { await fetch(`/api/generate/jobs/${id}`, { method: "DELETE" }); } catch (_) {} },
+    async repairJob(id) {
+      try {
+        const r = await fetch(`/api/generate/jobs/${encodeURIComponent(id)}/repair`, { method: "POST" });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        this.pushToast(d.message || "Saved provider task repaired.", "success");
+      } catch (e) {
+        this.pushToast("Repair failed: " + e, "error");
+      }
+    },
     async clearHistory() { try { await fetch("/api/generate/jobs", { method: "DELETE" }); this.genJobs = []; } catch (_) {} },
     /** Open the outputs folder (all generated clips) in Finder, derived from a job's absolute path. */
     openOutputsFolder() {

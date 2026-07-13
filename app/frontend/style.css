@@ -87,6 +87,8 @@ main { padding: 22px; max-width: 1200px; margin: 0 auto; }
 .gen-grid { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: start; }
 @media (max-width: 880px) { .gen-grid { grid-template-columns: 1fr; } }
 .gen-controls { display: flex; flex-direction: column; gap: 14px; }
+.generation-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-bottom: 13px; border-bottom: 1px solid var(--border); }
+.generation-filters .field > span { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { font-size: 12px; color: var(--muted); }
 .field small { color: var(--muted); font-weight: 400; }
@@ -97,6 +99,20 @@ input, select, textarea {
 textarea { resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cost-estimate { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 9px; background: rgba(106,163,255,.07); }
+.cost-estimate > span { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+.cost-estimate > strong { color: var(--accent); }
+.cost-estimate > small { grid-column: 1 / -1; color: var(--muted); }
+
+.spend-history { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.spend-history-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.spend-history-head span { color: var(--muted); font-size: 11px; }
+.spend-chart { display: grid; grid-template-columns: repeat(14, minmax(18px, 1fr)); gap: 5px; height: 154px; margin-top: 12px; }
+.spend-day { min-width: 0; display: grid; grid-template-rows: 18px 1fr 18px; gap: 3px; text-align: center; }
+.spend-value { overflow: hidden; color: var(--muted); font-size: 8px; white-space: nowrap; }
+.spend-bar-track { position: relative; overflow: hidden; border-radius: 4px 4px 2px 2px; background: var(--panel-2); }
+.spend-bar { position: absolute; inset: auto 0 0; border-radius: 4px 4px 2px 2px; background: linear-gradient(180deg, var(--accent-2), var(--accent)); min-height: 0; }
+.spend-date { overflow: hidden; color: var(--muted); font-size: 8px; white-space: nowrap; }
 
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .seg button {
@@ -504,6 +520,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   .tabs button { flex: 0 0 auto; }
   .workspace-intro { grid-template-columns: 1fr; gap: 16px; }
   .workspace-meta { grid-template-columns: 1fr; }
+  .generation-filters { grid-template-columns: 1fr; }
+  .spend-chart { gap: 2px; }
   .settings-grid { grid-template-columns: 1fr; }
   .models-hero { border-radius: 15px; padding: 20px 17px; }
   .models-hero h1 { font-size: 28px; }

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .. import settings as app_settings
+from .. import catalog_sync, settings as app_settings
 from .base import CloudVideoModel, VideoProvider, serialize_cloud_model
 from .fal import FalProvider
+from .kie import KieProvider
+from .replicate import ReplicateProvider
 
-# Linked providers. Add new adapters here (Phase 2: kie, replicate).
 PROVIDERS: dict[str, VideoProvider] = {
     "fal": FalProvider(),
+    "kie": KieProvider(),
+    "replicate": ReplicateProvider(),
 }
 
 
@@ -26,7 +29,7 @@ def provider_for_id(model_id: str) -> Optional[tuple[VideoProvider, CloudVideoMo
     if not is_cloud_id(model_id):
         return None
     prov = PROVIDERS[model_id.split(":", 1)[0]]
-    model = prov.get_model(model_id)
+    model = next((m for m in catalog_sync.models_for(prov) if m.id == model_id), None)
     if model is None:
         return None
     return prov, model
@@ -50,7 +53,7 @@ def cloud_models_serialized() -> list[dict]:
     for prov in PROVIDERS.values():
         ks, paid = _key_set(prov), _paid_on(prov)
         try:
-            models = prov.list_models()
+            models = catalog_sync.models_for(prov)
         except Exception:
             models = []
         for m in models:
@@ -86,7 +89,7 @@ def providers_status() -> list[dict]:
     out = []
     for prov in PROVIDERS.values():
         try:
-            n_models = len(prov.list_models())
+            n_models = len(catalog_sync.models_for(prov))
         except Exception:
             n_models = 0
         out.append({
@@ -122,11 +125,14 @@ def set_paid(provider: str, on: bool) -> None:
 
 
 def refresh(provider: str) -> int:
-    """Force a re-read of the provider's model list. Returns the model count.
-    (Phase 1: re-reads the curated file; Phase 2 will re-fetch live.)"""
+    """Force a provider model refresh and persist its catalog diff."""
     if provider not in PROVIDERS:
         raise KeyError(provider)
     prov = PROVIDERS[provider]
     if hasattr(prov, "_cache"):
         prov._cache = None  # type: ignore[attr-defined]
-    return len(prov.list_models())
+    return len(catalog_sync.models_for(prov, force=True))
+
+
+def start_catalog_sync() -> None:
+    catalog_sync.start_background(lambda: PROVIDERS.values())

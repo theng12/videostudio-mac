@@ -1,0 +1,15 @@
+{
+  "models": [
+    {
+      "provider_model": "lightricks/ltx-2-fast",
+      "label": "LTX-2 Fast",
+      "capabilities": ["txt2video", "img2video"],
+      "summary": "Fast text/image-to-video with synchronized audio.",
+      "max_duration_s": 20,
+      "resolutions": ["1080p"],
+      "aspect_ratios": ["16:9", "9:16"],
+      "price_unit": "per_second",
+      "price_usd": 0.04
+    }
+  ]
+}

@@ -219,6 +219,8 @@ class VideoJob:
     error: Optional[str] = None
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
+    # Persisted for restart recovery but intentionally omitted from serialize().
+    cloud_state: Optional[dict] = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
     thread: Optional[threading.Thread] = None
 
@@ -227,6 +229,23 @@ class VideoJob:
         if self.started_at is not None:
             end = self.finished_at if self.finished_at is not None else time.time()
             duration = max(0.0, end - self.started_at)
+        cloud_recovery = None
+        if self.cloud_state:
+            state = self.cloud_state
+            provider_terminal = bool(state.get("provider_terminal"))
+            has_resume_data = isinstance(state.get("submit_raw"), dict)
+            cloud_recovery = {
+                "provider": state.get("provider"),
+                "task_id": state.get("provider_job_id"),
+                "status": state.get("provider_state") or "polling",
+                "delayed": bool(state.get("delayed_at")),
+                "recoverable": has_resume_data and not provider_terminal and not self.output_path
+                               and self.state != "cancelled",
+                "submission_unknown": state.get("provider_state") == "submit-unknown",
+                "last_error": state.get("last_poll_error"),
+                "last_checked_at": state.get("last_checked_at"),
+                "poll_attempts": int(state.get("poll_attempts") or 0),
+            }
         return {
             "id": self.job_id,
             "mode": self.mode,
@@ -242,6 +261,7 @@ class VideoJob:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": duration,
+            "cloud_recovery": cloud_recovery,
         }
 
 
@@ -414,6 +434,27 @@ class VideoManager:
         job.thread.start()
         return job
 
+    def resume_cloud(self, job: VideoJob, runner) -> bool:
+        """Re-attach a persisted cloud job to its existing provider task."""
+        with self._lock:
+            if job.state not in ("queued", "running", "error") or not job.cloud_state:
+                return False
+            if job.thread and job.thread.is_alive():
+                return False
+            job.cancel_event.clear()
+            job.state = "queued"
+            job.error = None
+            job.finished_at = None
+            job.thread = threading.Thread(
+                target=self._run_cloud, args=(job, runner),
+                name=f"vid-cloud-{job.job_id}", daemon=True,
+            )
+            job.thread.start()
+        return True
+
+    def persist_state(self) -> None:
+        self._persist()
+
     def _run_cloud(self, job: VideoJob, runner) -> None:
         if job.cancel_event.is_set():
             job.state = "cancelled"
@@ -421,7 +462,7 @@ class VideoManager:
             self._persist()
             return
         job.state = "running"
-        job.started_at = time.time()
+        job.started_at = job.started_at or time.time()
         job.progress = 0.05
         print(f"[vid] starting cloud {job.mode} {job.job_id}: {job.params.get('repo')}", flush=True)
         try:
@@ -541,15 +582,22 @@ class VideoManager:
 
     def _persist(self) -> None:
         try:
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            terminal = [j for j in self._jobs.values()
-                        if j.state in ("done", "error", "cancelled")]
-            terminal.sort(key=lambda j: j.finished_at or 0, reverse=True)
-            terminal = terminal[:HISTORY_MAX]
-            payload = {"jobs": [self._to_disk(j) for j in terminal]}
-            tmp = HISTORY_FILE.with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(payload, default=str))
-            os.replace(tmp, HISTORY_FILE)
+            # Pollers and the repair watchdog can persist concurrently. One lock
+            # protects the shared snapshot and temp-file replace from clobbering
+            # another job's durable provider task ID.
+            with self._lock:
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                terminal = [j for j in self._jobs.values()
+                            if j.state in ("done", "error", "cancelled")]
+                terminal.sort(key=lambda j: j.finished_at or 0, reverse=True)
+                terminal = terminal[:HISTORY_MAX]
+                active_cloud = [j for j in self._jobs.values()
+                                if j.params.get("cloud") and j.cloud_state
+                                and j.state in ("queued", "running")]
+                payload = {"jobs": [self._to_disk(j) for j in active_cloud + terminal]}
+                tmp = HISTORY_FILE.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(payload, default=str))
+                os.replace(tmp, HISTORY_FILE)
         except Exception as e:
             print(f"[vid] persist failed: {e}", file=sys.stderr, flush=True)
 
@@ -581,6 +629,7 @@ class VideoManager:
             "error": job.error,
             "started_at": job.started_at,
             "finished_at": job.finished_at,
+            "cloud_state": job.cloud_state,
         }
 
     @staticmethod
@@ -602,6 +651,7 @@ class VideoManager:
                 error=raw.get("error"),
                 started_at=raw.get("started_at"),
                 finished_at=raw.get("finished_at"),
+                cloud_state=raw.get("cloud_state"),
             )
         except Exception:
             return None

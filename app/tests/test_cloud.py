@@ -81,3 +81,13 @@ def test_set_caps_coerces_and_persists(isolated):
     assert caps["global"]["daily"] == 10.0
     assert caps["global"]["monthly"] == 0.0            # negative coerced to 0
     assert caps["per_provider"]["fal"]["daily"] == 3.0
+
+
+def test_spend_summary_includes_14_day_history(isolated):
+    from backend import spend
+    sid = spend.record_submit("fal", "fal:x", "job1", 1.25)
+    spend.record_finish(sid, actual_usd=1.0, duration_s=4.0, state="done")
+    history = spend.summary()["daily_history"]
+    assert len(history) == 14
+    assert history[-1]["total"] == 1.0
+    assert history[-1]["providers"] == {"fal": 1.0}

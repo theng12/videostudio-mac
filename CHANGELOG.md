@@ -10,6 +10,49 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.6.0] — 2026-07-14
+
+### Added — Kie/Replicate providers, fresh catalogs, and restart-safe cloud jobs
+
+- Added Kie.ai and Replicate adapters behind the existing cloud generation API.
+  Replicate's curated models are augmented from its live text-to-video collection.
+- Added a persistent 30-minute catalog cache with new/deprecated diffs. Removed
+  models remain visible for a 30-day migration window; a failed refresh keeps the
+  last known-good catalog.
+- Provider task IDs now persist privately immediately after submission. Local
+  timeouts and temporary poll/result-download failures use bounded backoff and
+  keep checking the original task indefinitely instead of spending credits on a
+  replacement. Startup recovery plus a watchdog automatically repairs stopped
+  pollers; the Outputs UI also offers **repair saved task** for manual recovery.
+- Submission intent is persisted before the paid API call. If that first response
+  is lost before a task ID returns, the outcome is marked unknown and additional
+  paid submissions to that provider are blocked instead of risking duplicate use.
+- Recovery history writes are serialized so concurrent cloud pollers cannot
+  overwrite another job's saved provider task.
+- Paid-use consent is now enforced by the backend, not only shown in Settings.
+  Models without a verified cost remain visible but cannot start a billable job.
+- Fixed silent cloud-key saves in Settings: the provider rows initialize safely,
+  Save shows progress/success/errors, and failed toggles restore server state.
+- Finished the cloud gateway polish pass: the Generate tab now previews the
+  provider charge, offers capability/duration/resolution model filters and
+  cloud-native duration/resolution/aspect controls, while Settings plots a
+  14-day spend history with provider breakdowns.
+- Per-second jobs now reconcile estimated spend against the downloaded MP4's
+  actual duration. Fixed per-video pricing remains exact, and provider-complete
+  jobs stay booked while a result download is recovering.
+- Fixed cloud Generate readiness being incorrectly blocked by the local video
+  engine check; cloud models now use their own key/paid/verified-price gates.
+
+### Verified
+
+- Real fal end-to-end generation completed: queue submit, polling, valid 5.04 s
+  MP4 download/serving, and $0.04 spend reconciliation.
+- Live app catalog reports fal, Kie, and Replicate models. Full suite: 28 tests
+  covering adapters, catalog diffs/grace, billing gates, durable task IDs,
+  no-resubmit timeout recovery, watchdog healing, and restart persistence.
+
+No new dependencies; run **Update** and restart.
+
 ## [0.5.0] — 2026-07-13
 
 ### Added — cloud video provider gateway (fal.ai) with spend guardrails

@@ -1,0 +1,14 @@
+{
+  "_comment": "Kie Market has no stable model-list API. Keep model ids current from docs.kie.ai. Entries without reliable USD pricing remain browseable but are blocked by the spend gate.",
+  "models": [
+    {
+      "provider_model": "kling-3.0/video",
+      "label": "Kling 3.0",
+      "capabilities": ["txt2video"],
+      "summary": "Kling 3.0 single-shot text-to-video through Kie.ai.",
+      "max_duration_s": 15,
+      "resolutions": ["720p", "1080p", "4k"],
+      "aspect_ratios": ["16:9", "9:16", "1:1"]
+    }
+  ]
+}

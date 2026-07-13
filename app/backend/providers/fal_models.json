@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated fal.ai video models. fal has no clean public model-list API, so this is the Phase-1 source of truth and is meant to be hand-edited (or replaced by live-listing in Phase 2). VERIFY each `provider_model` path + price against https://fal.ai/models before trusting costs — paths and pricing drift. price_unit is 'per_second' or 'per_video'; price_usd is USD for that unit.",
+  "_comment": "Curated fal.ai video models. fal has no clean public model-list API, so this hand-edited file remains the source of truth. VERIFY each `provider_model` path and price against https://fal.ai/models before trusting costs — paths and pricing drift. price_unit is 'per_second' or 'per_video'; price_usd is USD for that unit.",
   "models": [
     {
       "provider_model": "fal-ai/kling-video/v2/master/text-to-video",

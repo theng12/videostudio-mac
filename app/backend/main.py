@@ -17,6 +17,7 @@ Serves:
 - `/api/generate/video2video`        → start an image-to-video or video-to-video generation
 - `/api/generate/jobs`               → list generation jobs
 - `/api/generate/jobs/{id}`          → poll one job
+- `/api/generate/jobs/{id}/repair`   → re-attach a saved cloud provider task
 - `/api/generate/jobs/{id}/video`    → fetch the rendered mp4
 - `/api/generate/jobs/{id}/cancel`   → cancel a running job
 - `/api/generate/history/{id}`       → delete one finished clip + its file
@@ -32,6 +33,7 @@ import os
 import socket
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -70,7 +72,17 @@ APP_VERSION = _read_app_version()
 
 # ───────────── FastAPI setup ─────────────
 
-app = FastAPI(title="Video Studio KH", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    providers_registry.start_catalog_sync()
+    resumed = cloud_jobs.resume_inflight()
+    cloud_jobs.start_repair_watchdog()
+    if resumed:
+        print(f"[cloud] resumed {resumed} in-flight job(s)", flush=True)
+    yield
+
+
+app = FastAPI(title="Video Studio KH", version="0.1.0", lifespan=lifespan)
 
 # Permissive CORS so the main mac can call the mac mini over LAN.
 app.add_middleware(
@@ -532,7 +544,7 @@ def set_provider_paid(key: str, body: ProviderPaidBody) -> dict:
 
 @app.post("/api/providers/{key}/refresh")
 def refresh_provider(key: str) -> dict:
-    """Re-read a provider's model list (Phase 1: the curated file)."""
+    """Refresh a provider's live/curated model catalog and persistent cache."""
     try:
         n = providers_registry.refresh(key)
     except KeyError:
@@ -655,6 +667,8 @@ def _start_cloud(params: dict, mode: str) -> dict:
         job, est = cloud_jobs.start_cloud_generation(mode, params)
     except cloud_jobs.NoProviderKey as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except cloud_jobs.PaidUseDisabled as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except spend.CapExceeded as e:
         raise HTTPException(status_code=402, detail=str(e))
     except ValueError as e:
@@ -699,6 +713,9 @@ async def start_video2video(
     guidance: Optional[float] = Form(None),
     seed: Optional[int] = Form(None),
     strength: Optional[float] = Form(None),   # video2video only — distance from the input
+    duration: Optional[float] = Form(None),
+    resolution: Optional[str] = Form(None),
+    aspect_ratio: Optional[str] = Form(None),
 ) -> dict:
     """
     Image-to-video or video-to-video. multipart/form-data: a `file` (a still
@@ -727,10 +744,15 @@ async def start_video2video(
         "frames": (frames, 1, 513), "fps": (fps, 1, 60),
         "steps": (steps, 1, 200), "guidance": (guidance, 0.0, 30.0),
         "seed": (seed, -1, 4294967295), "strength": (strength, 0.0, 1.0),
+        "duration": (duration, 0.1, 60.0),
     }
     for name, (value, low, high) in numeric_limits.items():
         if value is not None and not low <= value <= high:
             raise HTTPException(status_code=422, detail=f"{name} must be between {low} and {high}")
+    if resolution is not None and len(resolution) > 16:
+        raise HTTPException(status_code=422, detail="resolution exceeds the supported length")
+    if aspect_ratio is not None and len(aspect_ratio) > 16:
+        raise HTTPException(status_code=422, detail="aspect_ratio exceeds the supported length")
 
     # Persist the upload so the worker can load it by path.
     uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
@@ -776,6 +798,9 @@ async def start_video2video(
         "guidance": guidance,
         "seed": seed,
         "strength": strength,
+        "duration": duration,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
     }
     if mode == "img2video":
         params["image_path"] = str(saved.resolve())
@@ -812,6 +837,20 @@ def get_generation_job(job_id: str) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     return {"job": job.serialize()}
+
+
+@app.post("/api/generate/jobs/{job_id}/repair")
+def repair_generation_job(job_id: str) -> dict:
+    """Re-attach polling to a saved provider task. This never submits a new task."""
+    try:
+        job, attached = cloud_jobs.repair_job(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="job not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"job": job.serialize(), "attached": attached,
+            "message": "Repair attached to the saved provider task." if attached
+                       else "The saved provider task is already being monitored."}
 
 
 @app.get("/api/generate/jobs/{job_id}/video")

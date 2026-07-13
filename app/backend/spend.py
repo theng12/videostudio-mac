@@ -176,6 +176,24 @@ def summary() -> dict:
         recent = [dict(r) for r in conn.execute(
             "SELECT ts, provider, model, est_usd, actual_usd, duration_s, state "
             "FROM spend ORDER BY ts DESC LIMIT 50").fetchall()]
+        history_rows = conn.execute(
+            "SELECT date(ts, 'unixepoch', 'localtime') AS day, provider, "
+            "SUM(COALESCE(actual_usd, est_usd, 0)) AS usd "
+            "FROM spend WHERE ts >= ? AND state IN ('submitted','done') "
+            "GROUP BY day, provider ORDER BY day",
+            (_day_start(now) - 13 * 86400,),
+        ).fetchall()
+    history: dict[str, dict] = {}
+    today = _dt.datetime.fromtimestamp(now).date()
+    for offset in range(13, -1, -1):
+        day = (today - _dt.timedelta(days=offset)).isoformat()
+        history[day] = {"day": day, "total": 0.0, "providers": {}}
+    for row in history_rows:
+        if row["day"] not in history:
+            continue
+        usd = round(float(row["usd"] or 0), 4)
+        history[row["day"]]["providers"][row["provider"]] = usd
+        history[row["day"]]["total"] = round(history[row["day"]]["total"] + usd, 4)
     providers = {}
     for prov in (app_settings.get("providers") or {}).keys():
         providers[prov] = provider_summary(prov)
@@ -189,4 +207,5 @@ def summary() -> dict:
         "per_provider": providers,
         "caps": _caps(),
         "recent": recent,
+        "daily_history": list(history.values()),
     }

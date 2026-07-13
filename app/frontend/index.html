@@ -57,7 +57,7 @@
           </div>
           <div class="workspace-stat">
             <span>Clip</span>
-            <strong x-text="gen.fps ? (gen.frames / gen.fps).toFixed(1) + ' sec' : '—'"></strong>
+            <strong x-text="selectedModel?.is_cloud ? Number(gen.duration || 0).toFixed(1) + ' sec' : (gen.fps ? (gen.frames / gen.fps).toFixed(1) + ' sec' : '—')"></strong>
           </div>
         </div>
       </header>
@@ -78,14 +78,41 @@
       <div class="gen-grid" x-show="cachedModels.length > 0">
         <!-- left: controls -->
         <div class="gen-controls card">
+          <div class="generation-filters" aria-label="Filter generation models">
+            <label class="field"><span>Capability</span>
+              <select x-model="genFilters.capability" @change="onGenerationFilterChange()">
+                <option value="all">Any mode</option>
+                <option value="txt2video">Text → Video</option>
+                <option value="img2video">Image → Video</option>
+                <option value="video2video">Video → Video</option>
+              </select>
+            </label>
+            <label class="field"><span>Min duration</span>
+              <select x-model.number="genFilters.minDuration" @change="onGenerationFilterChange()">
+                <option :value="0">Any</option>
+                <option :value="5">5 sec</option>
+                <option :value="10">10 sec</option>
+              </select>
+            </label>
+            <label class="field"><span>Resolution</span>
+              <select x-model="genFilters.resolution" @change="onGenerationFilterChange()">
+                <option value="all">Any</option>
+                <template x-for="value in generationResolutionOptions" :key="value">
+                  <option :value="value" x-text="value"></option>
+                </template>
+              </select>
+            </label>
+          </div>
+
           <label class="field">
             <span>Model</span>
             <select x-model="gen.repo" @change="onModelChange()">
-              <template x-for="m in cachedModels" :key="m.repo">
+              <template x-for="m in generationModels" :key="m.repo">
                 <option :value="m.repo" x-text="m.label"></option>
               </template>
             </select>
           </label>
+          <p class="hint" x-show="generationModels.length === 0">No ready model matches these filters.</p>
 
           <div class="field">
             <span>Mode</span>
@@ -126,7 +153,7 @@
                       placeholder="blurry, low quality, distorted"></textarea>
           </label>
 
-          <div class="grid2">
+          <div class="grid2" x-show="!selectedModel?.is_cloud">
             <label class="field"><span>Frames</span>
               <input type="number" x-model.number="gen.frames" min="9" step="8" /></label>
             <label class="field"><span>FPS</span>
@@ -143,6 +170,29 @@
               <input type="number" x-model.number="gen.seed" /></label>
             <label class="field" x-show="gen.mode === 'video2video'"><span>Strength</span>
               <input type="number" x-model.number="gen.strength" step="0.05" min="0" max="1" /></label>
+          </div>
+
+          <div class="grid2" x-show="selectedModel?.is_cloud" x-cloak>
+            <label class="field"><span>Duration</span>
+              <input type="number" x-model.number="gen.duration" min="0.1" :max="selectedModel?.max_duration_s || 60" step="0.5" /></label>
+            <label class="field" x-show="selectedModel?.resolutions?.length"><span>Resolution</span>
+              <select x-model="gen.resolution">
+                <template x-for="value in (selectedModel?.resolutions || [])" :key="value">
+                  <option :value="value" x-text="value"></option>
+                </template>
+              </select></label>
+            <label class="field" x-show="selectedModel?.aspect_ratios?.length"><span>Aspect ratio</span>
+              <select x-model="gen.aspectRatio">
+                <template x-for="value in (selectedModel?.aspect_ratios || [])" :key="value">
+                  <option :value="value" x-text="value"></option>
+                </template>
+              </select></label>
+          </div>
+
+          <div class="cost-estimate" x-show="selectedModel?.is_cloud" x-cloak>
+            <span>Estimated provider charge</span>
+            <strong x-text="estimatedCloudCost == null ? 'Price unavailable' : '$' + estimatedCloudCost.toFixed(4)"></strong>
+            <small>Checked against your spend caps before submission. Per-second jobs are reconciled from the downloaded clip duration.</small>
           </div>
 
           <button class="primary big" :disabled="!canSubmit"
@@ -173,6 +223,8 @@
                 <span class="pill" :class="j.state" x-text="j.state"></span>
                 <span class="mode-tag" x-text="j.mode"></span>
                 <span class="spacer"></span>
+                <button class="link-btn" x-show="j.state==='error' && j.cloud_recovery?.recoverable"
+                        @click="repairJob(j.id)">repair saved task</button>
                 <button class="link-btn" x-show="j.state==='running' || j.state==='queued'"
                         @click="cancelJob(j.id)">cancel</button>
               </div>
@@ -188,6 +240,20 @@
                      :src="j.output_url + '?t=' + j.id"></video>
 
               <div class="job-err" x-show="j.state==='error'" x-text="j.error"></div>
+
+              <div class="hint" x-show="j.cloud_recovery?.task_id" x-cloak>
+                <span>Provider task <code x-text="j.cloud_recovery?.task_id"></code> is saved.</span>
+                <span x-show="j.cloud_recovery?.delayed && j.state!=='done'">
+                  It is taking longer than expected; Video Studio will keep checking without submitting again.
+                </span>
+                <span x-show="j.cloud_recovery?.status==='retrying' || j.cloud_recovery?.status==='result-retry'">
+                  Connection/result recovery is active and will retry automatically.
+                </span>
+              </div>
+              <div class="job-err" x-show="j.cloud_recovery?.submission_unknown" x-cloak>
+                The provider may have accepted this paid request, but no task ID came back.
+                Video Studio will not resubmit it. Check the provider dashboard before starting another job.
+              </div>
 
               <div class="job-meta" x-show="j.state==='done'">
                 <span x-show="j.resolved_seed != null" x-text="'seed ' + j.resolved_seed"></span>
@@ -511,13 +577,16 @@
             </div>
             <div class="token-row" style="margin-top:8px">
               <input type="password" x-model="providerKeyInput[p.key]" :placeholder="p.key_set ? '•••••• saved — paste to replace' : 'API key'">
-              <button class="ghost" @click="saveProviderKey(p.key)">Save</button>
+              <button type="button" class="ghost" :disabled="!!providerSaving[p.key]"
+                      @click.prevent="saveProviderKey(p.key)"
+                      x-text="providerSaving[p.key] ? 'Saving…' : 'Save'"></button>
             </div>
             <div class="settings-actions" style="margin-top:8px">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px">
                 <input type="checkbox" :checked="p.paid" @change="toggleProviderPaid(p.key, $event.target.checked)"> Enable paid generation
               </label>
               <button class="link-btn" @click="refreshProvider(p.key)">Refresh models</button>
+              <span class="settings-msg" x-text="providerMsg[p.key] || ''"></span>
             </div>
             <p class="hint">Spend — today <b x-text="'$' + (p.spend?.today || 0).toFixed(2)"></b><span x-show="p.spend?.cap_daily"> / $<span x-text="(p.spend.cap_daily||0).toFixed(2)"></span></span> · month <b x-text="'$' + (p.spend?.month || 0).toFixed(2)"></b><span x-show="p.spend?.cap_monthly"> / $<span x-text="(p.spend.cap_monthly||0).toFixed(2)"></span></span></p>
           </div>
@@ -544,6 +613,21 @@
           <span class="settings-msg" :class="capsMsgKind" x-text="capsMsg"></span>
         </div>
         <p class="hint" x-show="spend">Total cloud spend — today <b x-text="'$' + ((spend?.global?.today) || 0).toFixed(2)"></b>, this month <b x-text="'$' + ((spend?.global?.month) || 0).toFixed(2)"></b>.</p>
+        <div class="spend-history" x-show="spend?.daily_history?.length" x-cloak>
+          <div class="spend-history-head">
+            <strong>Last 14 days</strong>
+            <span>Estimate until completion · duration-reconciled where available</span>
+          </div>
+          <div class="spend-chart" aria-label="Cloud spend over the last 14 days">
+            <template x-for="day in (spend?.daily_history || [])" :key="day.day">
+              <div class="spend-day" :title="spendDayTitle(day)">
+                <span class="spend-value" x-text="day.total ? '$' + Number(day.total).toFixed(2) : ''"></span>
+                <div class="spend-bar-track"><div class="spend-bar" :style="`height:${Math.max(day.total ? 5 : 0, Number(day.total || 0) / spendHistoryMax * 100)}%`"></div></div>
+                <span class="spend-date" x-text="spendDayLabel(day.day)"></span>
+              </div>
+            </template>
+          </div>
+        </div>
       </div>
 
       <div class="card settings-card">

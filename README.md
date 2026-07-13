@@ -79,6 +79,7 @@ fully downloaded before a generation job will run.
 | `POST` | `/api/generate/video2video` | start an image-to-video or video-to-video job (multipart) |
 | `GET` | `/api/generate/jobs` | list jobs |
 | `GET` | `/api/generate/jobs/{id}` | poll one job |
+| `POST` | `/api/generate/jobs/{id}/repair` | re-attach a saved cloud provider task without resubmitting |
 | `GET` | `/api/generate/jobs/{id}/video` | fetch the rendered mp4 |
 | `DELETE` | `/api/generate/jobs/{id}` | cancel a job |
 | `GET` | `/api/generate/stream` | SSE job progress |
@@ -129,6 +130,10 @@ while (!["done", "error", "cancelled"].includes(state)) {
 }
 console.log("video:", `${BASE}/api/generate/jobs/${id}/video`);
 
+// If a saved cloud poller ever stops, re-attach to its original provider task.
+// This does not submit another paid generation.
+await fetch(`${BASE}/api/generate/jobs/${id}/repair`, { method: "POST" });
+
 // Video-to-video (multipart): restyle an input clip
 const fd = new FormData();
 fd.append("file", inputClipBlob, "input.mp4");
@@ -162,6 +167,9 @@ while job["state"] not in ("done", "error", "cancelled"):
 if job["state"] == "done":
     mp4 = requests.get(f"{BASE}/api/generate/jobs/{job['id']}/video").content
     open("out.mp4", "wb").write(mp4)
+
+# Safe cloud repair: reuses the provider task ID already saved for this job.
+requests.post(f"{BASE}/api/generate/jobs/{job['id']}/repair")
 
 # Image-to-video (multipart)
 with open("frame.png", "rb") as f:
@@ -205,8 +213,8 @@ curl -s -X POST "$BASE/api/downloads" \
 
 ## Cloud video providers (gateway)
 
-Video Studio is also a **gateway** for cloud video generators. Link a provider
-(fal.ai in v0.5; kie / replicate to follow) and its models appear in the **same**
+Video Studio is also a **gateway** for cloud video generators. Link fal.ai,
+Kie.ai, or Replicate and its models appear in the **same**
 `/api/catalog` alongside local ones, with the same generation API — so a client
 like Story Studio connects **once** and gets local **and** cloud models, kept
 current as providers add/deprecate models. See `SPEC.md` for the full design.
@@ -216,12 +224,31 @@ current as providers add/deprecate models. See `SPEC.md` for the full design.
 - **Spend guardrails:** set **per-provider and global** daily/monthly USD caps
   (Settings → *Spend guardrails*). Caps reset on the calendar; a generation that
   would exceed a cap is **blocked before it runs**. Every cloud job's cost is
-  recorded.
+  recorded. The Generate tab shows the estimate before submit, and Settings
+  plots the last 14 days of spend by provider.
+- **Cloud controls:** filter ready models by capability, minimum duration, and
+  resolution, then set the selected model's duration, resolution, and aspect
+  ratio directly in Generate.
 - **Routing:** cloud models carry a `provider:` id (e.g.
   `fal:fal-ai/kling-video/v2/master/text-to-video`). Generation goes through the
   **same** endpoints; the gateway submits to the provider, polls, and downloads
   the clip into `app/output/` — the job/SSE/`/video` lifecycle is identical to a
   local render.
+- **Freshness + recovery:** provider catalogs refresh through a persistent TTL
+  cache. New models are marked, removed models remain visible as deprecated for
+  30 days. Each cloud job saves its intent before crossing the paid API boundary,
+  then saves the provider's task ID immediately when it is returned.
+  Timeouts and temporary network/result-download failures back off and keep
+  polling that same task indefinitely; they never submit or bill a replacement.
+  A watchdog re-attaches stopped pollers automatically after errors or app
+  restarts, and a **repair saved task** action is available for manual recovery.
+  If the initial submit response is lost before a task ID arrives, Video Studio
+  marks the outcome unknown and blocks further paid submissions to that provider
+  rather than guessing and risking duplicate credits.
+- **Price safety:** a cloud model without a verified price remains browseable,
+  but Video Studio refuses to submit it until a trustworthy price is configured.
+  Per-second estimates are reconciled from the downloaded MP4's actual duration;
+  fixed per-video prices remain exact.
 
 Provider/spend API:
 
@@ -234,7 +261,7 @@ curl -s "$BASE/api/providers"
 curl -s -X POST "$BASE/api/providers/fal/key"  -H 'Content-Type: application/json' -d '{"key":"YOUR_FAL_KEY"}'
 # Enable paid generation
 curl -s -X POST "$BASE/api/providers/fal/paid" -H 'Content-Type: application/json' -d '{"paid":true}'
-# Spend today/month vs caps + recent records
+# Spend today/month vs caps + recent records + 14-day history
 curl -s "$BASE/api/spend"
 # Set caps (USD; 0 = no cap)
 curl -s -X POST "$BASE/api/spend/caps" -H 'Content-Type: application/json' \
@@ -243,10 +270,16 @@ curl -s -X POST "$BASE/api/spend/caps" -H 'Content-Type: application/json' \
 # Generate with a cloud model — same endpoint as local
 curl -s -X POST "$BASE/api/generate/txt2video" -H 'Content-Type: application/json' \
   -d '{"repo":"fal:fal-ai/kling-video/v2/master/text-to-video","prompt":"a red kite over the sea","duration":5}'
+
+# Manually re-attach polling to the provider task already saved for a job.
+# This endpoint never creates a new provider task.
+curl -s -X POST "$BASE/api/generate/jobs/<JOB_ID>/repair"
 ```
 
-> The fal model list lives in `app/backend/providers/fal_models.json` — hand-edit
-> it to add models or correct paths/prices (verify against <https://fal.ai/models>).
+> Curated model metadata lives in `app/backend/providers/*_models.json`.
+> Replicate augments its curated entries from its live text-to-video collection;
+> fal.ai and Kie.ai currently use the curated files because they do not expose a
+> suitable stable model-list endpoint for this gateway.
 
 ## Notes & limitations
 
