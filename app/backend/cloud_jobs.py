@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import time
 import threading
+import ipaddress
+import socket
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -17,7 +20,7 @@ from typing import Optional
 from . import settings as app_settings, spend
 from .providers.base import CloudVideoModel
 from .providers import registry
-from .video import OUTPUT_DIR, manager as gen_manager
+from .video import OUTPUT_DIR, _probe_output, manager as gen_manager
 
 POLL_INTERVAL_S = 4.0
 DELAYED_AFTER_S = 20 * 60
@@ -25,6 +28,7 @@ DELAYED_POLL_INTERVAL_S = 30.0
 MAX_RETRY_BACKOFF_S = 5 * 60.0
 WATCHDOG_INTERVAL_S = 30.0
 _DL_TIMEOUT_S = 300
+_MAX_RESULT_BYTES = 2_000_000_000
 _WATCHDOG_LOCK = threading.Lock()
 _watchdog_started = False
 
@@ -226,6 +230,10 @@ def _drive(job, prov, model, mode: str, params: dict, spend_id: str,
                 _wait(job, min(MAX_RETRY_BACKOFF_S, 2 ** min(failures, 8)))
                 continue
             job.output_path = str(out_path.resolve())
+            # Test adapters may stub the downloader; production downloads must
+            # exist and are structurally inspected before becoming playable.
+            if out_path.exists():
+                job.media_info = _probe_output(out_path)
             duration_s = _mp4_duration_s(out_path)
             if duration_s is not None:
                 actual_usd = est
@@ -379,17 +387,46 @@ def _mp4_duration_s(path: Path) -> Optional[float]:
         return None
 
 
+def _validate_public_https_url(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("Provider result URL must be HTTPS.")
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)}
+    except OSError as exc:
+        raise ValueError(f"Provider result host could not be resolved: {exc}") from exc
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if not ip.is_global:
+            raise ValueError("Provider result URL resolved to a private or local address.")
+
+
 def _download(url: str, dest: Path) -> None:
+    _validate_public_https_url(url)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".mp4.part")
     req = urllib.request.Request(url, headers={"User-Agent": "videostudio"})
-    with urllib.request.urlopen(req, timeout=_DL_TIMEOUT_S) as r, tmp.open("wb") as f:
-        while True:
-            chunk = r.read(1024 * 256)
-            if not chunk:
-                break
-            f.write(chunk)
-    tmp.replace(dest)
+    written = 0
+    try:
+        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT_S) as r, tmp.open("wb") as f:
+            _validate_public_https_url(r.geturl())
+            declared = int(r.headers.get("Content-Length") or 0)
+            if declared > _MAX_RESULT_BYTES:
+                raise ValueError("Provider result exceeds the 2 GB safety limit.")
+            while True:
+                chunk = r.read(1024 * 256)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > _MAX_RESULT_BYTES:
+                    raise ValueError("Provider result exceeds the 2 GB safety limit.")
+                f.write(chunk)
+        if written == 0:
+            raise ValueError("Provider returned an empty video.")
+        tmp.replace(dest)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _patch_spend_job(spend_id: str, job_id: str) -> None:

@@ -554,7 +554,7 @@ function studio() {
     _initFamilyLibrary() {
       if (this.modelFilters.collapsedFamilies.size || !this.models.length) return;
       const cached = this.models.find((m) => m.cache?.state === "cached");
-      const firstFamily = cached?.family || (this.families["ltx-video"] ? "ltx-video" : this.models[0].family);
+      const firstFamily = cached?.family || (this.families["cogvideox"] ? "cogvideox" : this.models[0].family);
       this.modelFilters.collapsedFamilies = new Set(
         Object.keys(this.families).filter((id) => id !== firstFamily),
       );
@@ -634,6 +634,12 @@ function studio() {
 
     // ──────── Generate ────────
     modeLabel(cap) { return { txt2video: "Text → Video", img2video: "Image → Video", video2video: "Video → Video" }[cap] || cap; },
+    jobStageLabel(job) {
+      if (job.state === "queued" && job.queue_position) return `queued #${job.queue_position}`;
+      return ({ preparing: "preparing", loading: "loading model", generating: "generating frames",
+        encoding: "encoding video", provider: "provider processing", cancelling: "cancelling", interrupted: "interrupted",
+        completed: "completed", failed: "failed", cancelled: "cancelled" })[job.stage] || job.state;
+    },
     onModelChange() { this.applyModelDefaults(); },
     onGenerationFilterChange() {
       if (!this.generationModels.some((m) => m.repo === this.gen.repo)) {
@@ -771,6 +777,30 @@ function studio() {
         this.pushToast(d.message || "Saved provider task repaired.", "success");
       } catch (e) {
         this.pushToast("Repair failed: " + e, "error");
+      }
+    },
+    reuseJob(job) {
+      const p = job.params || {};
+      if (p.repo && this.models.some((m) => m.repo === p.repo)) this.gen.repo = p.repo;
+      this.applyModelDefaults();
+      this.gen.mode = p.mode || job.mode || this.gen.mode;
+      this.gen.prompt = p.prompt || "";
+      this.gen.negativePrompt = p.negative_prompt || "";
+      for (const [target, source] of [["frames","frames"],["fps","fps"],["steps","steps"],
+        ["guidance","guidance"],["width","width"],["height","height"],["seed","seed"],
+        ["strength","strength"],["duration","duration"],["resolution","resolution"],
+        ["aspectRatio","aspect_ratio"]]) {
+        if (p[source] !== null && p[source] !== undefined) this.gen[target] = p[source];
+      }
+      if (job.resolved_seed !== null && job.resolved_seed !== undefined) this.gen.seed = job.resolved_seed;
+      this.tab = "generate";
+      if (this.gen.mode !== "txt2video") {
+        this.gen.inputFile = null; this.gen.inputName = "";
+        if (this.gen.inputUrl) URL.revokeObjectURL(this.gen.inputUrl);
+        this.gen.inputUrl = "";
+        this.pushToast("Settings restored. Choose the source file again before generating.", "info");
+      } else {
+        this.pushToast("Generation settings restored.", "success");
       }
     },
     async clearHistory() { try { await fetch("/api/generate/jobs", { method: "DELETE" }); this.genJobs = []; } catch (_) {} },

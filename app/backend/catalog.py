@@ -39,8 +39,8 @@ FAMILIES: dict[str, Family] = {
         accent="#59d6c7",
         summary=(
             "Lightricks' LTX-Video — a DiT video model tuned for speed. The "
-            "lightest, fastest option here and the best Apple Silicon starting "
-            "point. Does text-to-video and image-to-video."
+            "catalog keeps the current 0.9.8 13B distilled Diffusers release; "
+            "it is fast for its quality tier but requires a high-memory Mac."
         ),
         how_to_use=(
             "Frame count must be 8·n+1 (e.g. 97, 121). Good defaults: ~40 steps, "
@@ -87,7 +87,7 @@ FAMILIES: dict[str, Family] = {
         monogram="CGX",
         accent="#c69cff",
         summary=(
-            "THUDM's CogVideoX — mature diffusers support with the broadest mode "
+            "Zhipu AI's CogVideoX — mature Diffusers support with the broadest mode "
             "coverage: text-to-video, image-to-video, AND a dedicated "
             "video-to-video pipeline for restyling an existing clip."
         ),
@@ -95,7 +95,8 @@ FAMILIES: dict[str, Family] = {
             "Frame count must be 8·n+1 (e.g. 49). Good defaults: ~50 steps, "
             "guidance 6.0, 8 fps, 720×480. The 2B variant runs in float16 and is "
             "the lightest; 5B runs in bfloat16 for better quality. For "
-            "video-to-video, upload a clip and describe the target style."
+            "video-to-video, upload a clip and describe the target style. The 2B "
+            "checkpoint is the lowest-memory local starting point in this catalog."
         ),
     ),
 }
@@ -120,7 +121,19 @@ class ModelEntry:
     size_gb: float          # approximate full-precision download size
     gated: bool
     min_unified_memory_gb: int = 16
+    recommended_unified_memory_gb: int = 24
     recommended_hardware: str = ""
+    expected_speed: str = "Slow on Apple Silicon"
+    max_frames: int = 257
+    max_duration_s: float = 16.0
+    resolutions: tuple[str, ...] = field(default_factory=tuple)
+    aspect_ratios: tuple[str, ...] = ("16:9", "9:16", "1:1")
+    license_name: str = "See model card"
+    license_url: str = ""
+    commercial_use: str = "Review the model license before commercial use."
+    # A repo may declare a newer/specialized Diffusers class than the family
+    # default. This is part of catalog truth, not a UI-only label.
+    pipeline_classes: dict[str, str] = field(default_factory=dict)
     # Generation modes this model supports (see module docstring).
     capabilities: tuple[str, ...] = ("txt2video",)
     # Plain-English use-case description shown on the model card.
@@ -144,40 +157,31 @@ class ModelEntry:
 CATALOG: tuple[ModelEntry, ...] = (
     # ──────────── LTX-Video ────────────
     ModelEntry(
-        repo="Lightricks/LTX-Video",
-        label="LTX-Video 2B (t2v + i2v)",
+        repo="Lightricks/LTX-Video-0.9.8-13B-distilled",
+        label="LTX-Video 0.9.8 13B distilled (t2v + i2v)",
         family="ltx-video",
-        variant_label="2B Standard",
-        role="Best starting point",
-        size_gb=254.1,
+        variant_label="0.9.8 13B Distilled",
+        role="Fast high-quality final",
+        size_gb=93.1,
         gated=False,
-        min_unified_memory_gb=24,
-        recommended_hardware="M2 Pro / M3 24 GB+; the lightest model here, best for first runs.",
+        min_unified_memory_gb=96,
+        recommended_unified_memory_gb=128,
+        recommended_hardware="Mac Studio with 128 GB+ unified memory; distilled for fewer denoising steps.",
+        expected_speed="Fast for a 13B video model; still measured in minutes locally",
+        max_frames=257,
+        max_duration_s=10.7,
+        resolutions=("704×480", "1280×704"),
+        license_name="LTX-Video Open Weights License 0.X",
+        license_url="https://huggingface.co/Lightricks/LTX-Video/blob/main/LTX-Video-Open-Weights-License-0.X.txt",
+        commercial_use="Commercial use is permitted below the license's revenue threshold; organizations at or above US$10M annual revenue need a paid license.",
+        pipeline_classes={"txt2video": "LTXConditionPipeline", "img2video": "LTXConditionPipeline"},
         capabilities=("txt2video", "img2video"),
-        best_for="The fastest, lightest way to get a clip out of this studio. Best for iteration, motion tests, and image-to-video animation.",
+        best_for="Current official distilled LTX release for rapid high-quality text or image conditioned clips on a high-memory Mac.",
         use_cases=(
-            ("good",  "Quick text-to-video drafts and camera/motion exploration"),
+            ("good",  "Rapid text-to-video drafts and camera/motion exploration"),
             ("good",  "Animating a still image (image-to-video) into a short clip"),
             ("weak",  "Fine text rendering inside the frame"),
-            ("avoid", "Maximum photoreal fidelity — Wan/Hunyuan win there"),
-        ),
-        video_defaults=_vd(frames=97, fps=24, steps=40, guidance=3.0, width=704, height=480, dtype="bfloat16"),
-    ),
-    ModelEntry(
-        repo="Lightricks/LTX-Video-0.9.7-distilled",
-        label="LTX-Video 0.9.7 distilled (fast)",
-        family="ltx-video",
-        variant_label="0.9.7 Distilled",
-        role="Fast drafts",
-        size_gb=47.9,
-        gated=False,
-        min_unified_memory_gb=24,
-        recommended_hardware="M2 Pro / M3 24 GB+; distilled for very few-step generation.",
-        capabilities=("txt2video", "img2video"),
-        best_for="Distilled LTX for the fastest possible drafts — fewer steps, lower guidance.",
-        use_cases=(
-            ("good",  "Near-real-time previews and rapid prompt iteration"),
-            ("weak",  "Final-quality detail vs the non-distilled checkpoint"),
+            ("avoid", "Low-memory Macs — the checkpoint alone is about 93 GB"),
         ),
         video_defaults=_vd(frames=97, fps=24, steps=8, guidance=1.0, width=704, height=480, dtype="bfloat16"),
     ),
@@ -192,7 +196,15 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=34.2,
         gated=False,
         min_unified_memory_gb=32,
+        recommended_unified_memory_gb=48,
         recommended_hardware="M2 Max / M3 Max 32 GB+; the practical Wan pick for Apple Silicon.",
+        expected_speed="Slow; typically tens of minutes locally",
+        max_frames=121,
+        max_duration_s=7.6,
+        resolutions=("1280×704",),
+        license_name="Apache-2.0",
+        license_url="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers/blob/main/LICENSE.txt",
+        commercial_use="Permitted under Apache-2.0.",
         capabilities=("txt2video", "img2video"),
         best_for="One model for both text-to-video and image-to-video at 720p. The best quality-per-GB Wan option for a Mac.",
         use_cases=(
@@ -211,7 +223,15 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=126.2,
         gated=False,
         min_unified_memory_gb=128,
+        recommended_unified_memory_gb=192,
         recommended_hardware="Mac Studio M-series with 128 GB+ unified memory. Large MoE.",
+        expected_speed="Very slow; final-render tier",
+        max_frames=121,
+        max_duration_s=7.6,
+        resolutions=("1280×720",),
+        license_name="Apache-2.0",
+        license_url="https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers/blob/main/LICENSE.txt",
+        commercial_use="Permitted under Apache-2.0.",
         capabilities=("txt2video",),
         best_for="Top-tier Wan text-to-video quality via the 14B mixture-of-experts. Reserve for the big-memory machine.",
         use_cases=(
@@ -229,7 +249,15 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=126.2,
         gated=False,
         min_unified_memory_gb=128,
+        recommended_unified_memory_gb=192,
         recommended_hardware="Mac Studio M-series with 128 GB+ unified memory. Large MoE.",
+        expected_speed="Very slow; final-render tier",
+        max_frames=121,
+        max_duration_s=7.6,
+        resolutions=("1280×720",),
+        license_name="Apache-2.0",
+        license_url="https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers/blob/main/LICENSE.txt",
+        commercial_use="Permitted under Apache-2.0.",
         capabilities=("img2video",),
         best_for="Top-tier image-to-video: animate a reference frame with the 14B MoE.",
         use_cases=(
@@ -249,7 +277,15 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=41.9,
         gated=False,
         min_unified_memory_gb=64,
+        recommended_unified_memory_gb=96,
         recommended_hardware="64 GB+ unified memory (M-series Max/Ultra). Slow but excellent.",
+        expected_speed="Very slow; cinematic final-render tier",
+        max_frames=129,
+        max_duration_s=8.6,
+        resolutions=("1280×720",),
+        license_name="Tencent Hunyuan Community License",
+        license_url="https://huggingface.co/tencent/HunyuanVideo/blob/main/LICENSE.txt",
+        commercial_use="Commercial terms apply; the license excludes the EU, UK, and South Korea.",
         capabilities=("txt2video",),
         best_for="Among the best open text-to-video quality — strong motion and prompt adherence. Large and slow.",
         use_cases=(
@@ -268,7 +304,15 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=43.6,
         gated=False,
         min_unified_memory_gb=64,
+        recommended_unified_memory_gb=96,
         recommended_hardware="64 GB+ unified memory (M-series Max/Ultra).",
+        expected_speed="Very slow; high-fidelity final-render tier",
+        max_frames=129,
+        max_duration_s=8.6,
+        resolutions=("1280×720",),
+        license_name="Tencent Hunyuan Community License",
+        license_url="https://huggingface.co/tencent/HunyuanVideo-I2V/blob/main/LICENSE.txt",
+        commercial_use="Commercial terms apply; the license excludes the EU, UK, and South Korea.",
         capabilities=("img2video",),
         best_for="HunyuanVideo quality applied to image-to-video — animate a still with high fidelity.",
         use_cases=(
@@ -280,15 +324,24 @@ CATALOG: tuple[ModelEntry, ...] = (
 
     # ──────────── CogVideoX ────────────
     ModelEntry(
-        repo="THUDM/CogVideoX-2b",
+        repo="zai-org/CogVideoX-2b",
         label="CogVideoX-2B (t2v + v2v, light)",
         family="cogvideox",
         variant_label="2B",
         role="Light video-to-video",
         size_gb=13.8,
         gated=False,
-        min_unified_memory_gb=16,
-        recommended_hardware="M-series 16 GB+. The lightest CogVideoX; runs in float16.",
+        min_unified_memory_gb=24,
+        recommended_unified_memory_gb=32,
+        recommended_hardware="M-series 24 GB minimum, 32 GB recommended. The lowest-memory local tier.",
+        expected_speed="Slow, but the fastest low-memory preview tier here",
+        max_frames=49,
+        max_duration_s=6.1,
+        resolutions=("720×480",),
+        license_name="Apache-2.0",
+        license_url="https://huggingface.co/zai-org/CogVideoX-2b/blob/main/LICENSE",
+        commercial_use="Permitted under Apache-2.0.",
+        aliases=("THUDM/CogVideoX-2b",),
         capabilities=("txt2video", "video2video"),
         best_for="The lightest video-to-video option — restyle an existing clip, or generate from text, on modest memory.",
         use_cases=(
@@ -299,7 +352,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         video_defaults=_vd(frames=49, fps=8, steps=50, guidance=6.0, width=720, height=480, dtype="float16"),
     ),
     ModelEntry(
-        repo="THUDM/CogVideoX-5b",
+        repo="zai-org/CogVideoX-5b",
         label="CogVideoX-5B (t2v + v2v)",
         family="cogvideox",
         variant_label="5B",
@@ -307,7 +360,16 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=21.5,
         gated=False,
         min_unified_memory_gb=32,
+        recommended_unified_memory_gb=48,
         recommended_hardware="M-series Max/Ultra 32 GB+; bfloat16. Better quality than 2B.",
+        expected_speed="Slow; balanced preview/final tier",
+        max_frames=49,
+        max_duration_s=6.1,
+        resolutions=("720×480",),
+        license_name="CogVideoX License",
+        license_url="https://huggingface.co/zai-org/CogVideoX-5b/blob/main/LICENSE",
+        commercial_use="Commercial registration is required; the basic license is limited to services below one million monthly visits.",
+        aliases=("THUDM/CogVideoX-5b",),
         capabilities=("txt2video", "video2video"),
         best_for="The quality pick for video-to-video and text-to-video in the CogVideoX family.",
         use_cases=(
@@ -318,7 +380,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         video_defaults=_vd(frames=49, fps=8, steps=50, guidance=6.0, width=720, height=480, dtype="bfloat16"),
     ),
     ModelEntry(
-        repo="THUDM/CogVideoX-5b-I2V",
+        repo="zai-org/CogVideoX-5b-I2V",
         label="CogVideoX-5B-I2V (image-to-video)",
         family="cogvideox",
         variant_label="5B I2V",
@@ -326,7 +388,16 @@ CATALOG: tuple[ModelEntry, ...] = (
         size_gb=21.6,
         gated=False,
         min_unified_memory_gb=32,
+        recommended_unified_memory_gb=48,
         recommended_hardware="M-series Max/Ultra 32 GB+; bfloat16.",
+        expected_speed="Slow; balanced image-animation tier",
+        max_frames=49,
+        max_duration_s=6.1,
+        resolutions=("720×480",),
+        license_name="CogVideoX License",
+        license_url="https://huggingface.co/zai-org/CogVideoX-5b-I2V/blob/main/LICENSE",
+        commercial_use="Commercial registration is required; the basic license is limited to services below one million monthly visits.",
+        aliases=("THUDM/CogVideoX-5b-I2V",),
         capabilities=("img2video",),
         best_for="CogVideoX 5B tuned for image-to-video — animate a still frame.",
         use_cases=(
@@ -340,7 +411,7 @@ CATALOG: tuple[ModelEntry, ...] = (
 
 def get_model(repo: str) -> Optional[ModelEntry]:
     for m in CATALOG:
-        if m.repo == repo:
+        if m.repo == repo or repo in m.aliases:
             return m
     return None
 
@@ -364,7 +435,16 @@ def serialize_model(m: ModelEntry) -> dict:
         "gated": m.gated,
         "quantization": m.quantization,
         "min_unified_memory_gb": m.min_unified_memory_gb,
+        "recommended_unified_memory_gb": m.recommended_unified_memory_gb,
         "recommended_hardware": m.recommended_hardware,
+        "expected_speed": m.expected_speed,
+        "max_frames": m.max_frames,
+        "max_duration_s": m.max_duration_s,
+        "resolutions": list(m.resolutions),
+        "aspect_ratios": list(m.aspect_ratios),
+        "license_name": m.license_name,
+        "license_url": m.license_url,
+        "commercial_use": m.commercial_use,
         "apple_optimized": m.is_apple_optimized,
         "aliases": list(m.aliases),
         "capabilities": list(m.capabilities),

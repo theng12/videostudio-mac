@@ -8,27 +8,27 @@
 # lets ops without a Metal kernel fall back to CPU instead of crashing.
 
 # ── Core engine ──
-torch>=2.4
-torchvision>=0.19
+torch==2.13.0
+torchvision==0.28.0
 # Diffusers must be recent enough to ship the Wan 2.2 / LTX-Video / HunyuanVideo
 # / CogVideoX pipelines. If your installed version lacks a specific pipeline
 # class, the Generate tab surfaces a clear "update diffusers" error — bump this
 # pin or install diffusers from git main.
-diffusers>=0.36.0
-transformers>=4.49
-accelerate>=1.0
-safetensors>=0.4
+diffusers==0.39.0
+transformers==5.13.1
+accelerate==1.14.0
+safetensors==0.8.0
 
 # ── Text-encoder + tokenizer helpers some pipelines need ──
-sentencepiece>=0.2
-ftfy>=6.2
-protobuf>=4.25
+sentencepiece==0.2.1
+ftfy==6.3.1
+protobuf==7.35.1
 
 # ── Video I/O: export_to_video + load_video ──
-imageio>=2.34
-imageio-ffmpeg>=0.5
-opencv-python-headless>=4.9
+imageio==2.37.3
+imageio-ffmpeg==0.6.0
+opencv-python-headless==5.0.0.93
 
 # ── Numerics + image I/O for image-to-video inputs ──
-numpy>=1.26
-pillow>=10.0
+numpy==2.5.1
+pillow==12.3.0

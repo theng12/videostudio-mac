@@ -2,13 +2,9 @@
 // supporting deps to the existing conda_env. Required for any /api/generate/*
 // endpoint to work. Safe to run more than once.
 //
-// SOURCE-FIRST (not the lock): we install from `requirements-generation.txt`,
-// the authoritative range file that actually lists torch / diffusers /
-// transformers. We deliberately do NOT install `requirements-generation.lock.txt`
-// here — a drifted lock once shipped containing ONLY the base web-server
-// packages, so "Install Generation" installed nothing, Generate silently never
-// worked, and the UI still reported success. Installing from source can't have
-// that failure mode: the deps are right there in the file.
+// LOCKED STACK: the generated lock now contains both the base server and every
+// generation dependency. The verification step checks exact imports, pipeline
+// classes, and package integrity before any success notification is shown.
 //
 // VERIFY-THEN-NOTIFY: after installing we import the key modules. If any is
 // missing the import prints a traceback, the `on` matcher breaks the run, and
@@ -39,7 +35,7 @@ module.exports = {
           "path": "{{path.resolve(cwd, 'conda_env')}}"
         },
         message: [
-          "uv pip install -r requirements-generation.txt"
+          "uv pip install -r requirements-generation.lock.txt"
         ]
       }
     },
@@ -54,7 +50,8 @@ module.exports = {
           "path": "{{path.resolve(cwd, 'conda_env')}}"
         },
         message: [
-          "python -c \"import torch, diffusers, transformers; print('GEN_VERIFY_OK', torch.__version__)\" 2>&1"
+          "python -c \"import torch, diffusers, transformers; names=('LTXConditionPipeline','WanPipeline','WanImageToVideoPipeline','HunyuanVideoPipeline','HunyuanVideoImageToVideoPipeline','CogVideoXPipeline','CogVideoXImageToVideoPipeline','CogVideoXVideoToVideoPipeline'); missing=[n for n in names if not hasattr(diffusers,n)]; assert not missing, missing; print('GEN_VERIFY_OK', torch.__version__, diffusers.__version__, transformers.__version__)\" 2>&1",
+          "python -m pip check"
         ],
         on: [{ event: "/(ModuleNotFoundError|ImportError|Traceback)/", break: true }]
       }

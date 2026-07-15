@@ -14,8 +14,8 @@
 //     restart is service-aware and mutually exclusive: kickstart the service, OR
 //     start start.js — never both.
 //
-// Source-first deps (requirements*.txt, not the .lock) for the same reason as
-// install_generation.js: a drifted lock can silently omit deps.
+// Both dependency phases use synchronized exact locks. Import/class checks and
+// pip's integrity check gate the success notification.
 module.exports = {
   run: [
     {
@@ -39,7 +39,7 @@ module.exports = {
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
         message: [
           "python -m pip install --upgrade pip",
-          "uv pip install -r requirements.txt"
+          "uv pip install -r requirements.lock.txt"
         ]
       }
     },
@@ -52,7 +52,7 @@ module.exports = {
         path: "app",
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
         message: [
-          "uv pip install -r requirements-generation.txt"
+          "uv pip install -r requirements-generation.lock.txt"
         ]
       }
     },
@@ -81,7 +81,8 @@ module.exports = {
         path: "app",
         conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
         message: [
-          "python -c \"import torch, diffusers, transformers; print('GEN_VERIFY_OK')\" 2>&1"
+          "python -c \"import torch, diffusers, transformers; names=('LTXConditionPipeline','WanPipeline','WanImageToVideoPipeline','HunyuanVideoPipeline','HunyuanVideoImageToVideoPipeline','CogVideoXPipeline','CogVideoXImageToVideoPipeline','CogVideoXVideoToVideoPipeline'); missing=[n for n in names if not hasattr(diffusers,n)]; assert not missing, missing; print('GEN_VERIFY_OK')\" 2>&1",
+          "python -m pip check"
         ],
         on: [{ event: "/(ModuleNotFoundError|ImportError|Traceback)/", break: true }]
       }

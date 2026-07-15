@@ -10,6 +10,62 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.7.0] — 2026-07-15
+
+### Production audit — catalog truth, safe media, and recoverable local jobs
+
+- Consolidated LTX to the current official `Lightricks/LTX-Video-0.9.8-13B-distilled`
+  Diffusers release and wired its real `LTXConditionPipeline`. Removed the misleading
+  254 GB multi-checkpoint `Lightricks/LTX-Video` row and superseded 0.9.7 row; their
+  existing cache folders are not deleted. Canonicalized CogVideoX to `zai-org` while
+  preserving transparent use of legacy `THUDM` caches.
+- Retained Wan 2.2 TI2V/A14B, HunyuanVideo T2V/I2V, and CogVideoX 2B/5B/I2V because
+  every visible mode maps to an installed Diffusers pipeline. Catalog details now show
+  measured download size, minimum/recommended memory, speed tier, frame/duration and
+  resolution limits, license links, and commercial-use restrictions. CogVideoX-2B is
+  now honestly presented as the lowest-memory local tier; none of the local models is
+  claimed to be MLX-native or comfortable on a 16 GB Mac.
+- Rebuilt the incomplete generation lock so it includes the full verified stack. Base
+  and generation requirements now use exact proven pins; Install, Install Generation,
+  and Update consume the locks and gate success on imports, required pipeline classes,
+  and `pip check`. Updated `setuptools` to 83.0.0 to resolve PYSEC-2026-3447.
+- Local jobs now enter a strict oldest-first queue with one heavyweight render at a
+  time, visible queue positions, and distinct preparing/loading/generating/encoding/
+  cancelling stages. Active local jobs are persisted; a restart converts interrupted
+  work to a useful recoverable history error instead of silently losing it. Pipelines
+  and MPS caches are released after success, cancellation, and failure.
+- Fixed unsafe history deletion and playback so stored paths can never escape managed
+  output/upload folders. Uploaded images are decoded with Pillow; videos are inspected
+  with structured ffprobe limits. Cloud result URLs must be public HTTPS, downloads are
+  capped at 2 GB, partial files are cleaned, and public/persisted job parameters no
+  longer include inline media or provider-private parameters.
+- Added disk preflight, resolution/frame validation, structured post-encode integrity
+  checks, and durable codec/resolution/FPS/frame/duration/size metadata. History can
+  restore every generation setting; source media must be selected again by design.
+- Modernized Generate with an at-a-glance model/mode/format/frame/seed strip, collapsed
+  advanced controls, truthful model-aware dimensions, queue stages, friendly errors
+  with collapsed technical details, stable non-autoplay previews, and responsive output
+  history even when no model is currently downloaded.
+
+### Verification
+
+- 35 automated tests pass, including new regressions for LTX dispatch, canonical cache
+  aliases, private job data, managed deletion, restart recovery, decoded uploads, and
+  cloud-result SSRF protection. Python compilation, JavaScript syntax, lock integrity,
+  all 9 catalog rows, all 4 engine families, `pip check`, `pip-audit`, FFmpeg/ffprobe,
+  Git whitespace, and desktop/390 px browser checks pass.
+- The existing real fal output was re-inspected: H.264/yuv420p, 1280×704, 24 FPS,
+  121 frames, 5.0417 seconds, playable in the browser with no console errors. It is
+  nonblank and changes from first to last frame, though its generated motion is subtle.
+- No local model generation was possible: this machine has no cached video weights,
+  only 16 GB unified memory, and its saved Hugging Face token currently fails validation.
+  No multi-gigabyte download or additional paid cloud job was started during the audit.
+- First/last-frame conditioning, camera/reference control, LoRA, audio-driven video,
+  upscaling, and interpolation remain absent because no audited local worker implements
+  them yet; the UI does not advertise those controls.
+- The sole test warning is FastAPI's upstream `TestClient` compatibility shim warning
+  that the current `httpx` bridge will move to `httpx2`; it does not affect production.
+
 ## [0.6.0] — 2026-07-14
 
 ### Added — Kie/Replicate providers, fresh catalogs, and restart-safe cloud jobs

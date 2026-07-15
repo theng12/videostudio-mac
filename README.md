@@ -9,7 +9,7 @@ a standalone single-modality launcher.
 
 > **Heads-up on performance.** Local video generation is heavy and slow on
 > Apple Silicon, especially for the larger models (Wan 2.2 A14B, HunyuanVideo).
-> Start with **LTX-Video** (lightest) to confirm your setup, and reserve the big
+> Start with **CogVideoX-2B** (the lowest-memory local tier) to confirm your setup, and reserve the big
 > models for a high-memory Mac (e.g. an M3 Ultra Mac Studio).
 
 ---
@@ -28,10 +28,10 @@ a standalone single-modality launcher.
 
 | Family | Models | Modes |
 |---|---|---|
-| **LTX-Video** | `Lightricks/LTX-Video`, `Lightricks/LTX-Video-0.9.7-distilled` | t2v, i2v |
+| **LTX-Video** | `Lightricks/LTX-Video-0.9.8-13B-distilled` | t2v, i2v |
 | **Wan 2.2** | `Wan-AI/Wan2.2-TI2V-5B-Diffusers`, `…T2V-A14B…`, `…I2V-A14B…` | t2v, i2v |
 | **HunyuanVideo** | `hunyuanvideo-community/HunyuanVideo`, `…-I2V` | t2v, i2v |
-| **CogVideoX** | `THUDM/CogVideoX-2b`, `…-5b`, `…-5b-I2V` | t2v, i2v, **v2v** |
+| **CogVideoX** | `zai-org/CogVideoX-2b`, `…-5b`, `…-5b-I2V` | t2v, i2v, **v2v** |
 
 ---
 
@@ -42,7 +42,7 @@ a standalone single-modality launcher.
 2. **Install Generation** — installs the heavy PyTorch + Diffusers engine. Run
    this once before generating.
 3. **Start** — launches the server and opens the Web UI.
-4. In the **Models** tab, download a model (start with LTX-Video).
+4. In the **Models** tab, download a model (CogVideoX-2B is the lowest-memory local option, but 24 GB is the audited minimum).
 5. In the **Generate** tab, pick the model, choose a mode, write a prompt (and
    upload an image/clip for i2v/v2v), then **Generate video**.
 
@@ -102,7 +102,10 @@ A job (`/api/generate/jobs/{id}`) looks like:
 }
 ```
 
-`state` is one of `queued | running | done | error | cancelled`.
+`state` is one of `queued | running | done | error | cancelled`. `stage` adds
+`preparing | loading | generating | encoding | cancelling | interrupted`, and
+`queue_position` reports strict oldest-first local scheduling. Only one local
+heavyweight render runs at a time.
 
 ### JavaScript (fetch)
 
@@ -114,7 +117,7 @@ const res = await fetch(`${BASE}/api/generate/txt2video`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    repo: "Lightricks/LTX-Video",
+    repo: "zai-org/CogVideoX-2b",
     prompt: "A cinematic drone shot over a misty forest at sunrise",
     frames: 97, fps: 24, steps: 40, guidance: 3.0, seed: -1,
   }),
@@ -137,7 +140,7 @@ await fetch(`${BASE}/api/generate/jobs/${id}/repair`, { method: "POST" });
 // Video-to-video (multipart): restyle an input clip
 const fd = new FormData();
 fd.append("file", inputClipBlob, "input.mp4");
-fd.append("repo", "THUDM/CogVideoX-5b");
+fd.append("repo", "zai-org/CogVideoX-5b");
 fd.append("mode", "video2video");
 fd.append("prompt", "make it look like a watercolor painting");
 fd.append("strength", "0.7");
@@ -153,7 +156,7 @@ BASE = "http://localhost:47872"
 
 # Text-to-video
 job = requests.post(f"{BASE}/api/generate/txt2video", json={
-    "repo": "Lightricks/LTX-Video",
+    "repo": "zai-org/CogVideoX-2b",
     "prompt": "A corgi running across a sunny meadow, slow motion",
     "frames": 97, "fps": 24, "steps": 40, "guidance": 3.0, "seed": -1,
 }).json()["job"]
@@ -175,7 +178,7 @@ requests.post(f"{BASE}/api/generate/jobs/{job['id']}/repair")
 with open("frame.png", "rb") as f:
     requests.post(f"{BASE}/api/generate/video2video",
         files={"file": ("frame.png", f, "image/png")},
-        data={"repo": "THUDM/CogVideoX-5b-I2V", "mode": "img2video",
+        data={"repo": "zai-org/CogVideoX-5b-I2V", "mode": "img2video",
               "prompt": "gentle parallax camera move", "frames": 49, "fps": 8})
 ```
 
@@ -187,7 +190,7 @@ BASE=http://localhost:47872
 # Text-to-video
 curl -s -X POST "$BASE/api/generate/txt2video" \
   -H 'Content-Type: application/json' \
-  -d '{"repo":"Lightricks/LTX-Video","prompt":"a neon Tokyo street at night","frames":97,"fps":24,"steps":40,"guidance":3.0,"seed":-1}'
+  -d '{"repo":"zai-org/CogVideoX-2b","prompt":"a neon Tokyo street at night","frames":49,"fps":8,"steps":50,"guidance":6.0,"seed":-1}'
 
 # Poll a job
 curl -s "$BASE/api/generate/jobs/<JOB_ID>"
@@ -198,7 +201,7 @@ curl -s "$BASE/api/generate/jobs/<JOB_ID>/video" -o out.mp4
 # Image-to-video / video-to-video (multipart)
 curl -s -X POST "$BASE/api/generate/video2video" \
   -F file=@input.mp4 \
-  -F repo=THUDM/CogVideoX-5b \
+  -F repo=zai-org/CogVideoX-5b \
   -F mode=video2video \
   -F prompt="watercolor style" \
   -F strength=0.7
@@ -206,7 +209,7 @@ curl -s -X POST "$BASE/api/generate/video2video" \
 # Start a model download
 curl -s -X POST "$BASE/api/downloads" \
   -H 'Content-Type: application/json' \
-  -d '{"repo":"Lightricks/LTX-Video"}'
+  -d '{"repo":"zai-org/CogVideoX-2b"}'
 ```
 
 ---

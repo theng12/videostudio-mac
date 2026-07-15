@@ -49,7 +49,7 @@ from . import cache, catalog, settings as app_settings
 from . import spend, cloud_jobs
 from .providers import registry as providers_registry
 from .downloads import manager
-from .video import manager as gen_manager, diagnostics as gen_diagnostics, pipeline_available
+from .video import manager as gen_manager, diagnostics as gen_diagnostics, model_pipeline_available
 from .imports import import_path, scan_for_candidates
 from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
 
@@ -82,7 +82,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Video Studio KH", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Video Studio KH", version=APP_VERSION, lifespan=lifespan)
 
 # Permissive CORS so the main mac can call the mac mini over LAN.
 app.add_middleware(
@@ -278,7 +278,7 @@ def get_catalog() -> dict:
     models = []
     for m in catalog.CATALOG:
         d = catalog.serialize_model(m)
-        d["cache"] = cache.status_snapshot(m.repo)
+        d["cache"] = cache.status_snapshot(m.repo, m.aliases)
         active = manager.active_for_repo(m.repo)
         d["active_download"] = active.serialize() if active else None
         d["is_cloud"] = False
@@ -311,7 +311,10 @@ def clear_downloads() -> dict:
 def start_download(body: StartDownloadBody) -> dict:
     if not body.repo or "/" not in body.repo:
         raise HTTPException(status_code=400, detail="repo must be 'owner/name'")
-    job = manager.start(body.repo, token=body.token)
+    model = catalog.get_model(body.repo)
+    if model is None:
+        raise HTTPException(status_code=400, detail="Only models in the audited local catalog can be downloaded.")
+    job = manager.start(model.repo, token=body.token)
     return {"job": job.serialize()}
 
 
@@ -652,12 +655,56 @@ def _require_engine_and_cache(repo: str) -> catalog.ModelEntry:
     model = catalog.get_model(repo)
     if model is None:
         raise HTTPException(status_code=400, detail=f"Unknown repo: {repo}")
-    if cache.cache_state(repo) != "cached":
+    if cache.status_snapshot(model.repo, model.aliases)["state"] != "cached":
         raise HTTPException(
             status_code=409,
             detail=f"Model {repo} is not fully cached. Download it from the Models tab first.",
         )
     return model
+
+
+def _validate_uploaded_media(path: Path, mode: str) -> None:
+    """Decode uploaded media and enforce bounded dimensions/duration.
+
+    Extensions and browser MIME types are hints only. Pillow/ffprobe are the
+    authority so malformed or renamed files never reach a model loader.
+    """
+    if mode == "img2video":
+        from PIL import Image, UnidentifiedImageError
+        Image.MAX_IMAGE_PIXELS = 40_000_000
+        try:
+            with Image.open(path) as image:
+                image.verify()
+            with Image.open(path) as image:
+                width, height = image.size
+                image.load()
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+            raise HTTPException(status_code=400, detail=f"Input is not a safe decodable image: {exc}")
+        if width < 64 or height < 64 or width > 8192 or height > 8192 or width * height > 40_000_000:
+            raise HTTPException(status_code=422, detail="Input image must be 64–8192 px per side and at most 40 megapixels.")
+        return
+
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height,avg_frame_rate,nb_frames:format=duration",
+             "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=20, check=True,
+        )
+        metadata = json.loads(result.stdout)
+        stream = (metadata.get("streams") or [])[0]
+        width, height = int(stream["width"]), int(stream["height"])
+        duration = float((metadata.get("format") or {}).get("duration") or 0)
+        rate = str(stream.get("avg_frame_rate") or "0/1").split("/", 1)
+        fps = float(rate[0]) / max(1.0, float(rate[1]))
+        raw_frames = stream.get("nb_frames")
+        frames = int(raw_frames) if str(raw_frames).isdigit() else int(duration * fps + 0.5)
+    except (subprocess.SubprocessError, OSError, ValueError, KeyError, IndexError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Input is not a safe decodable video: {exc}")
+    if width < 64 or height < 64 or width > 4096 or height > 4096 or width * height > 16_777_216:
+        raise HTTPException(status_code=422, detail="Input video dimensions exceed the 4096 px / 16.8 megapixel limit.")
+    if not 0 < duration <= 60 or not 0 < fps <= 60 or not 0 < frames <= 3600:
+        raise HTTPException(status_code=422, detail="Input video must be at most 60 seconds, 60 FPS, and 3600 frames.")
 
 
 def _start_cloud(params: dict, mode: str) -> dict:
@@ -692,7 +739,7 @@ def start_txt2video(body: Txt2VideoBody) -> dict:
             status_code=400,
             detail=f"{model.label} does not support text-to-video. Pick a t2v-capable model.",
         )
-    if not pipeline_available(model.family, "txt2video"):
+    if not model_pipeline_available(model, "txt2video"):
         raise HTTPException(status_code=409, detail="This video pipeline is missing. Run Update or reinstall Generation.")
     job = gen_manager.start_txt2video(body.model_dump())
     return {"job": job.serialize()}
@@ -734,7 +781,7 @@ async def start_video2video(
                 status_code=400,
                 detail=f"{model.label} does not support {mode}. Supported: {', '.join(model.capabilities)}.",
             )
-        if not pipeline_available(model.family, mode):
+        if not model_pipeline_available(model, mode):
             raise HTTPException(status_code=409, detail="This video pipeline is missing. Run Update or reinstall Generation.")
     if len(repo) > 500 or len(prompt) > 20000 or len(negative_prompt) > 20000:
         raise HTTPException(status_code=422, detail="repo and prompts exceed the supported length")
@@ -784,6 +831,11 @@ async def start_video2video(
     if written == 0:
         saved.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="input file is empty")
+    try:
+        _validate_uploaded_media(saved, mode)
+    except HTTPException:
+        saved.unlink(missing_ok=True)
+        raise
 
     params = {
         "repo": repo,
@@ -823,7 +875,7 @@ async def start_video2video(
 
 @app.get("/api/generate/jobs")
 def list_generation_jobs() -> dict:
-    return {"jobs": [j.serialize() for j in gen_manager.list_jobs()]}
+    return {"jobs": gen_manager.serialized_jobs()}
 
 
 @app.delete("/api/generate/jobs")
@@ -860,7 +912,14 @@ def get_generation_video(job_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="job not found")
     if not job.output_path:
         raise HTTPException(status_code=425, detail="video not ready yet")
-    return FileResponse(job.output_path, media_type="video/mp4")
+    output = Path(job.output_path).resolve()
+    try:
+        output.relative_to((Path(__file__).resolve().parent.parent / "output").resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="job output is outside the managed output folder")
+    if not output.is_file():
+        raise HTTPException(status_code=404, detail="video file is missing")
+    return FileResponse(output, media_type="video/mp4")
 
 
 @app.delete("/api/generate/jobs/{job_id}")
@@ -899,7 +958,7 @@ async def stream_generation():
     async def gen():
         try:
             while True:
-                payload = {"jobs": [j.serialize() for j in gen_manager.list_jobs()]}
+                payload = {"jobs": gen_manager.serialized_jobs()}
                 yield {"event": "snapshot", "data": json.dumps(payload)}
                 await asyncio.sleep(1.0)
         except asyncio.CancelledError:

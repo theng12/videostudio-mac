@@ -1,47 +1,68 @@
-# Fully-pinned lockfile — the exact package set of a KNOWN-GOOD install.
-# Phase 2 (full env incl. video generation stack — install_generation.js). Converges the WHOLE env.
-# To intentionally upgrade deps: edit the floors in requirements-generation.txt, install it against
-# conda_env, verify the app works, then regenerate BOTH locks:
-#   phase 1: uv pip compile requirements.txt -c <(../conda_env/bin/pip freeze) \
-#              --python ../conda_env/bin/python --no-annotate --no-header -o requirements.lock.txt
-#   phase 2: ../conda_env/bin/pip freeze > requirements-generation.lock.txt
-#   (re-add these headers; normalize any 'pkg @ file://…' line to 'pkg==version')
-# Generated: 2026-07-09 · python=3.12 (pinned in install.js) · macOS arm64
+## Generated from requirements.txt + requirements-generation.txt for Python 3.12 / macOS arm64 on 2026-07-15.
+## This lock intentionally converges the whole environment, including torch and Diffusers.
+## Regenerate with: uv pip compile requirements.txt requirements-generation.txt --python ../conda_env/bin/python --no-annotate --no-header -o requirements-generation.lock.txt
+accelerate==1.14.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.14.1
 certifi==2026.6.17
+charset-normalizer==3.4.9
 click==8.4.2
+diffusers==0.39.0
 fastapi==0.138.2
 filelock==3.29.4
 fsspec==2026.6.0
+ftfy==6.3.1
 h11==0.16.0
 hf-xet==1.5.1
 httpcore==1.0.9
 httptools==0.8.0
 httpx==0.28.1
-huggingface_hub==1.21.0
+huggingface-hub==1.21.0
 idna==3.18
+imageio==2.37.3
+imageio-ffmpeg==0.6.0
+importlib-metadata==9.0.0
+jinja2==3.1.6
 markdown-it-py==4.2.0
+markupsafe==3.0.3
 mdurl==0.1.2
+mpmath==1.3.0
+networkx==3.6.1
+numpy==2.5.1
+opencv-python-headless==5.0.0.93
 packaging==26.2
+pillow==12.3.0
+protobuf==7.35.1
+psutil==7.2.2
 pydantic==2.13.4
-pydantic_core==2.46.4
-Pygments==2.20.0
+pydantic-core==2.46.4
+pygments==2.20.0
 python-dotenv==1.2.2
 python-multipart==0.0.32
-PyYAML==6.0.3
+pyyaml==6.0.3
+regex==2026.7.10
+requests==2.34.2
 rich==15.0.0
-setuptools==82.0.1
+safetensors==0.8.0
+sentencepiece==0.2.1
+setuptools==83.0.0
 shellingham==1.5.4
 sse-starlette==3.4.5
 starlette==1.3.1
+sympy==1.14.0
+tokenizers==0.22.2
+torch==2.13.0
+torchvision==0.28.0
 tqdm==4.68.3
+transformers==5.13.1
 typer==0.25.1
+typing-extensions==4.15.0
 typing-inspection==0.4.2
-typing_extensions==4.15.0
+urllib3==2.7.0
 uvicorn==0.49.0
 uvloop==0.22.1
 watchfiles==1.2.0
+wcwidth==0.8.2
 websockets==16.0
-wheel==0.47.0
+zipp==4.1.0

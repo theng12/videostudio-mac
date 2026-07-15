@@ -42,6 +42,10 @@ def test_per_second_spend_reconciles_downloaded_duration(isolated, monkeypatch, 
     job = video.VideoJob("duration-cost", "txt2video", {"cloud": True})
     monkeypatch.setattr(cloud_jobs, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(cloud_jobs, "_download", download)
+    monkeypatch.setattr(cloud_jobs, "_probe_output", lambda _path: {
+        "codec": "h264", "pixel_format": "yuv420p", "width": 640, "height": 360,
+        "fps": 24, "frames": 121, "duration_s": 5.042, "size_bytes": 64,
+    })
     monkeypatch.setattr(cloud_jobs.gen_manager, "persist_state", lambda: None)
     monkeypatch.setattr(cloud_jobs.spend, "record_finish",
                         lambda *args, **kwargs: finishes.append((args, kwargs)))

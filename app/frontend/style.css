@@ -147,6 +147,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .job-prompt { font-size: 13px; color: var(--text); }
 .job video { width: 100%; border-radius: 9px; border: 1px solid var(--border); background: #000; }
 .job-err { color: var(--bad); font-size: 12px; white-space: pre-wrap; }
+.job-err details { margin-top: 6px; color: var(--muted); }
+.job-err summary { cursor: pointer; color: var(--bad); }
+.advanced-controls { margin: 8px 0 14px; border: 1px solid var(--border); border-radius: 7px; padding: 10px; }
+.advanced-controls > summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; }
+.advanced-controls[open] > summary { margin-bottom: 10px; }
 .job-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 
 /* two-click armed state for per-clip delete + prune buttons */

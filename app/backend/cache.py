@@ -95,6 +95,45 @@ def has_weight_files(repo: str) -> bool:
     return False
 
 
+def usable_snapshot(repo: str) -> Optional[Path]:
+    """Newest snapshot containing real weights, or None.
+
+    Returning the local snapshot path lets renamed Hugging Face organizations
+    continue to use an existing cache without copying or re-downloading it.
+    """
+    snaps = repo_cache_dir(repo) / "snapshots"
+    if not snaps.exists():
+        return None
+    try:
+        candidates = sorted(
+            (p for p in snaps.iterdir() if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except (FileNotFoundError, PermissionError):
+        return None
+    for snapshot in candidates:
+        try:
+            for path in snapshot.rglob("*"):
+                lower = path.name.lower()
+                if not path.name.endswith(".incomplete") and any(
+                    lower.endswith(ext) for ext in _WEIGHT_EXTENSIONS
+                ):
+                    return snapshot
+        except (FileNotFoundError, PermissionError):
+            continue
+    return None
+
+
+def resolve_cached_repo(repo: str, aliases: tuple[str, ...] = ()) -> tuple[str, Optional[Path]]:
+    """Return the cached repo id and snapshot, checking legacy aliases."""
+    for candidate in (repo, *aliases):
+        snapshot = usable_snapshot(candidate)
+        if snapshot is not None and not has_incomplete(candidate):
+            return candidate, snapshot
+    return repo, None
+
+
 def cache_state(repo: str) -> str:
     """
     Returns one of: 'absent', 'partial', 'cached'.
@@ -151,13 +190,15 @@ def incomplete_bytes(repo: str) -> int:
     return total
 
 
-def status_snapshot(repo: str) -> dict:
-    state = cache_state(repo)
+def status_snapshot(repo: str, aliases: tuple[str, ...] = ()) -> dict:
+    cached_repo, snapshot = resolve_cached_repo(repo, aliases)
+    state = "cached" if snapshot is not None else cache_state(repo)
     return {
         "repo": repo,
         "state": state,
-        "path": str(repo_cache_dir(repo)) if state != "absent" else None,
-        "bytes_complete": disk_bytes(repo),
+        "cached_repo": cached_repo if state == "cached" else None,
+        "path": str(repo_cache_dir(cached_repo)) if state != "absent" else None,
+        "bytes_complete": disk_bytes(cached_repo),
         "bytes_incomplete": incomplete_bytes(repo),
     }
 

@@ -1,5 +1,6 @@
-fastapi>=0.115
-uvicorn[standard]>=0.30
-huggingface_hub>=0.26
-sse-starlette>=2.1
-python-multipart>=0.0.9
+fastapi==0.138.2
+uvicorn[standard]==0.49.0
+huggingface_hub==1.21.0
+sse-starlette==3.4.5
+python-multipart==0.0.32
+setuptools==83.0.0

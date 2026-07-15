@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Studio KH</title>
-  <link rel="stylesheet" href="/assets/style.css?v=v1" />
+  <link rel="stylesheet" href="/assets/style.css?v=v061" />
   <!-- Order matters: app.js defines the global studio() that Alpine's x-data
        calls, so it must load before alpine.min.js. prompts.js seeds samples. -->
   <script src="/assets/auth.js?v=fleet-1"></script>
   <script defer src="/assets/prompts.js?v=v1"></script>
-  <script defer src="/assets/app.js?v=v1"></script>
+  <script defer src="/assets/app.js?v=v061"></script>
   <script defer src="/assets/alpine.min.js?v=v1"></script>
 </head>
 <body x-data="studio()" x-init="init()">
@@ -59,6 +59,14 @@
             <span>Clip</span>
             <strong x-text="selectedModel?.is_cloud ? Number(gen.duration || 0).toFixed(1) + ' sec' : (gen.fps ? (gen.frames / gen.fps).toFixed(1) + ' sec' : '—')"></strong>
           </div>
+          <div class="workspace-stat">
+            <span>Format</span>
+            <strong x-text="selectedModel?.is_cloud ? ((gen.resolution || 'provider default') + ' · ' + (gen.aspectRatio || 'auto')) : (gen.width + '×' + gen.height + ' · ' + gen.fps + ' FPS')"></strong>
+          </div>
+          <div class="workspace-stat">
+            <span>Frames / seed</span>
+            <strong x-text="selectedModel?.is_cloud ? 'provider managed' : (gen.frames + ' · ' + (gen.seed === -1 ? 'random' : gen.seed))"></strong>
+          </div>
         </div>
       </header>
 
@@ -72,10 +80,10 @@
       <!-- no usable models -->
       <div class="banner info" x-show="cachedModels.length === 0">
         No models ready yet. <a href="#" @click.prevent="tab='models'">Download</a> a local model
-        (e.g. <strong>LTX-Video</strong>), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
+        (start with <strong>CogVideoX-2B</strong> for the lowest local memory tier), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
       </div>
 
-      <div class="gen-grid" x-show="cachedModels.length > 0">
+      <div class="gen-grid">
         <!-- left: controls -->
         <div class="gen-controls card">
           <div class="generation-filters" aria-label="Filter generation models">
@@ -134,7 +142,7 @@
                 <img :src="gen.inputUrl" alt="input" />
               </template>
               <template x-if="gen.mode === 'video2video'">
-                <video :src="gen.inputUrl" muted loop autoplay playsinline></video>
+                <video :src="gen.inputUrl" muted controls playsinline></video>
               </template>
               <span class="preview-name" x-text="gen.inputName"></span>
             </div>
@@ -153,7 +161,9 @@
                       placeholder="blurry, low quality, distorted"></textarea>
           </label>
 
-          <div class="grid2" x-show="!selectedModel?.is_cloud">
+          <details class="advanced-controls" x-show="!selectedModel?.is_cloud">
+            <summary>Advanced local controls</summary>
+          <div class="grid2">
             <label class="field"><span>Frames</span>
               <input type="number" x-model.number="gen.frames" min="9" step="8" /></label>
             <label class="field"><span>FPS</span>
@@ -162,15 +172,16 @@
               <input type="number" x-model.number="gen.steps" min="1" max="100" /></label>
             <label class="field"><span>Guidance</span>
               <input type="number" x-model.number="gen.guidance" step="0.5" min="0" /></label>
-            <label class="field" x-show="gen.mode !== 'video2video'"><span>Width</span>
+            <label class="field" x-show="selectedModel?.family !== 'cogvideox'"><span>Width</span>
               <input type="number" x-model.number="gen.width" step="16" /></label>
-            <label class="field" x-show="gen.mode !== 'video2video'"><span>Height</span>
+            <label class="field" x-show="selectedModel?.family !== 'cogvideox'"><span>Height</span>
               <input type="number" x-model.number="gen.height" step="16" /></label>
             <label class="field"><span>Seed <small>(-1 = random)</small></span>
               <input type="number" x-model.number="gen.seed" /></label>
             <label class="field" x-show="gen.mode === 'video2video'"><span>Strength</span>
               <input type="number" x-model.number="gen.strength" step="0.05" min="0" max="1" /></label>
           </div>
+          </details>
 
           <div class="grid2" x-show="selectedModel?.is_cloud" x-cloak>
             <label class="field"><span>Duration</span>
@@ -220,13 +231,16 @@
           <template x-for="j in genJobs" :key="j.id">
             <div class="job card">
               <div class="job-top">
-                <span class="pill" :class="j.state" x-text="j.state"></span>
+                <span class="pill" :class="j.state" x-text="jobStageLabel(j)"></span>
                 <span class="mode-tag" x-text="j.mode"></span>
+                <span class="mode-tag" x-show="j.queue_position" x-text="'queue #' + j.queue_position"></span>
                 <span class="spacer"></span>
                 <button class="link-btn" x-show="j.state==='error' && j.cloud_recovery?.recoverable"
                         @click="repairJob(j.id)">repair saved task</button>
                 <button class="link-btn" x-show="j.state==='running' || j.state==='queued'"
                         @click="cancelJob(j.id)">cancel</button>
+                <button class="link-btn" x-show="j.state==='done' || j.state==='error' || j.state==='cancelled'"
+                        @click="reuseJob(j)">reuse settings</button>
               </div>
               <div class="job-prompt" x-text="j.params?.prompt || '(no prompt)'"></div>
 
@@ -239,7 +253,10 @@
               <video x-show="j.state==='done' && j.output_url" controls loop
                      :src="j.output_url + '?t=' + j.id"></video>
 
-              <div class="job-err" x-show="j.state==='error'" x-text="j.error"></div>
+              <div class="job-err" x-show="j.state==='error'">
+                <strong>Generation failed.</strong>
+                <details><summary>Technical details</summary><span x-text="j.error"></span></details>
+              </div>
 
               <div class="hint" x-show="j.cloud_recovery?.task_id" x-cloak>
                 <span>Provider task <code x-text="j.cloud_recovery?.task_id"></code> is saved.</span>
@@ -257,8 +274,11 @@
 
               <div class="job-meta" x-show="j.state==='done'">
                 <span x-show="j.resolved_seed != null" x-text="'seed ' + j.resolved_seed"></span>
-                <span x-show="j.duration_seconds != null"
-                      x-text="Math.round(j.duration_seconds) + 's'"></span>
+                <span x-show="j.media_info?.width" x-text="j.media_info.width + '×' + j.media_info.height"></span>
+                <span x-show="j.media_info?.fps" x-text="j.media_info.fps + ' FPS · ' + j.media_info.frames + ' frames'"></span>
+                <span x-show="j.media_info?.duration_s" x-text="j.media_info.duration_s + 's'"></span>
+                <span x-show="j.media_info?.codec" x-text="j.media_info.codec + ' · ' + j.media_info.pixel_format"></span>
+                <span x-show="j.media_info?.size_bytes" x-text="fmtBytes(j.media_info.size_bytes)"></span>
                 <a class="link-accent" :href="j.output_url" :download="j.id + '.mp4'">download</a>
                 <button class="link-btn" x-show="j.output_path" @click="revealInFolder(j.output_path)"
                         title="Show this clip in Finder">📂 reveal</button>
@@ -408,7 +428,7 @@
                 <span class="family-panel-copy">
                   <span class="family-title-line">
                     <strong x-text="family.label"></strong>
-                    <span class="family-recommended" x-show="family.id==='ltx-video'">Start here</span>
+                    <span class="family-recommended" x-show="family.id==='cogvideox'">Lowest-memory tier</span>
                     <span class="family-cached" x-show="family.cachedCount" x-text="family.cachedCount + ' downloaded'"></span>
                   </span>
                   <span class="family-summary" x-text="family.summary"></span>
@@ -491,6 +511,8 @@
                         <div class="variant-details-grid">
                           <div><span>Best for</span><p x-text="m.best_for"></p></div>
                           <div><span>Runtime</span><p><strong x-text="modelRuntimeLabel(m)"></strong><br /><small x-text="m.recommended_hardware"></small></p></div>
+                          <div><span>Speed and limits</span><p><strong x-text="m.expected_speed"></strong><br /><small x-text="'Up to ' + m.max_frames + ' frames / ' + m.max_duration_s + ' sec · ' + (m.resolutions || []).join(', ')"></small></p></div>
+                          <div><span>License</span><p><a class="link-accent" :href="m.license_url" target="_blank" rel="noopener" x-text="m.license_name"></a><br /><small x-text="m.commercial_use"></small></p></div>
                         </div>
                         <ul class="use-case-list" x-show="m.use_cases && m.use_cases.length">
                           <template x-for="u in m.use_cases" :key="u.text"><li :class="'use-case-' + u.kind"><span x-text="useCaseIcon(u.kind)"></span><span x-text="u.text"></span></li></template>
