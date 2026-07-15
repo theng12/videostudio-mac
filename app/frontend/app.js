@@ -56,6 +56,13 @@ function studio() {
       message: "", messageKind: "info",
       hf_token_set: false, hf_token_masked: "",
     },
+    autoUpdate: {
+      loaded:false, busy:false, message:"", messageKind:"info", state:"idle",
+      installed_version:"", latest_version:null, last_checked:null, next_check:null,
+      last_update_result:null, defer_reason:null, rollback:null, details:[],
+      update_available:false, scheduler:{installed:false}, release_notes_url:"",
+      settings:{mode:"off",frequency:"daily",maintenance_hour:6,idle_only:true},
+    },
     conn: { bind_port: 47872 },
 
     // cloud providers + spend guardrails
@@ -160,6 +167,7 @@ function studio() {
       await this.loadCatalog();
       await this.loadDiagnostics();
       await this.loadSettings();
+      await this.loadAutoUpdate(true);
       this.loadConnectivity();
       this._initRamPlanner();
       this.openDownloadsStream();
@@ -169,6 +177,9 @@ function studio() {
       setInterval(() => this.refreshHealth(), 8000);
       setInterval(() => this.loadDiagnostics(), 15000);
       setInterval(() => { if (this.tab === "settings") this.loadSpend(); }, 15000);
+      setInterval(() => {
+        if (this.tab === "settings" || ["checking","updating","restarting","deferred"].includes(this.autoUpdate.state)) this.loadAutoUpdate(true);
+      }, 5000);
     },
 
     // ──────── cloud providers + spend ────────
@@ -315,6 +326,43 @@ function studio() {
         this.settings.hf_token_set = !!s.hf_token_set;
         this.settings.hf_token_masked = s.hf_token_masked || "";
       } catch (_) {}
+    },
+
+    async loadAutoUpdate(silent=false) {
+      try {
+        const r = await fetch("/api/auto-update/status", {cache:"no-store"});
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        Object.assign(this.autoUpdate, data, {loaded:true});
+      } catch (e) {
+        if (!silent) { this.autoUpdate.message=String(e.message||e); this.autoUpdate.messageKind="error"; }
+      }
+    },
+    autoUpdateTime(value) {
+      if (!value) return "Not yet";
+      const date=new Date(value); return Number.isNaN(date.getTime()) ? "Not yet" : date.toLocaleString();
+    },
+    async saveAutoUpdate() {
+      this.autoUpdate.busy=true; this.autoUpdate.message="Saving and validating the schedule…"; this.autoUpdate.messageKind="info";
+      try {
+        const r=await fetch("/api/auto-update/settings",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(this.autoUpdate.settings)});
+        const data=await r.json(); if(!r.ok) throw new Error(data.detail||`HTTP ${r.status}`);
+        Object.assign(this.autoUpdate,data,{loaded:true});
+        this.autoUpdate.message=data.settings.mode==="off"?"Saved. Automatic updates are off and the schedule is unloaded.":"Saved. The updater schedule is installed and verified.";
+        this.autoUpdate.messageKind="success";
+      } catch(e) { this.autoUpdate.message=String(e.message||e); this.autoUpdate.messageKind="error"; }
+      finally { this.autoUpdate.busy=false; }
+    },
+    async autoUpdateAction(action,body={}) {
+      this.autoUpdate.busy=true; this.autoUpdate.message=action==="check"?"Checking safely…":"Starting the update helper…"; this.autoUpdate.messageKind="info";
+      try {
+        const r=await fetch(`/api/auto-update/${action}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+        const data=await r.json(); if(!r.ok) throw new Error(data.detail||`HTTP ${r.status}`);
+        Object.assign(this.autoUpdate,data,{loaded:true});
+        this.autoUpdate.message=body.after_current?"Queued. The updater will retry when Video Studio is idle.":(action==="check"?"Check started. Status refreshes automatically.":"Update started. This page may reconnect during restart.");
+        this.autoUpdate.messageKind="success";
+      } catch(e) { this.autoUpdate.message=String(e.message||e); this.autoUpdate.messageKind="error"; }
+      finally { this.autoUpdate.busy=false; }
     },
 
     async loadConnectivity() {

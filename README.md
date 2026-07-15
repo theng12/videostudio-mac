@@ -60,6 +60,20 @@ port).
 
 ---
 
+## Optional automatic updates
+
+Settings includes a safe automatic updater that defaults to **Off**. Notify and
+Automatic modes can run daily or weekly, always waiting for local generations,
+paid cloud jobs, and model downloads to finish. “Update after current work”
+retries until Video Studio is idle. Every update verifies the expected GitHub
+repository, clean fast-forward history, disk, dependencies, imports, health,
+and the running version; failed post-update verification triggers rollback.
+
+Monitor it through `GET /api/auto-update/status` and
+`GET /api/auto-update/readiness`. Settings, checks, updates, and retry use POST
+endpoints under `/api/auto-update/`. Logs are in `logs/auto_update/`; switching
+Off unloads the schedule immediately.
+
 ## API
 
 Base URL: `http://localhost:47872`. Interactive docs at `/docs` (Swagger) and

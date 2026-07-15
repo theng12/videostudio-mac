@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.8.0] — 2026-07-15
+
+### Added — safe optional automatic updates
+
+- Added Off, Notify only, and Automatic modes in Settings, with daily/weekly
+  schedules, status, manual checks, retry, and “Update after current work.”
+- Updates defer while any local or paid cloud video generation is queued or
+  running, or while a model download is active. The updater verifies the fixed
+  remote, clean `main`, fast-forward history, disk, dependencies, imports,
+  service health, and the exact running version.
+- Added a short-lived launchd scheduler, lock protection, retry/backoff,
+  rotating redacted logs, notifications, restart recovery, and bounded rollback.
+  The feature is Off by default.
+
+### Verification
+
+- Added focused updater/readiness tests and verified schedule lifecycle, APIs,
+  launchers, dependency integrity, the catalog truth audit, and responsive UI.
+
 ## [0.7.0] — 2026-07-15
 
 ### Production audit — catalog truth, safe media, and recoverable local jobs

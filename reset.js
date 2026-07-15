@@ -21,6 +21,20 @@ module.exports = {
       }
     },
     {
+      when: "{{local.confirmed && exists('conda_env')}}",
+      method: "shell.run",
+      params: {
+        path: "app",
+        conda: { "path": "{{path.resolve(cwd, 'conda_env')}}" },
+        message: "python -c \"from backend.auto_update_config import create_updater; create_updater().save_settings({'mode':'off','frequency':'daily','maintenance_hour':6,'idle_only':True})\""
+      }
+    },
+    {
+      when: "{{local.confirmed}}",
+      method: "fs.rm",
+      params: { path: "auto_update" }
+    },
+    {
       when: "{{local.confirmed}}",
       method: "fs.rm",
       params: {

@@ -52,6 +52,8 @@ from .downloads import manager
 from .video import manager as gen_manager, diagnostics as gen_diagnostics, model_pipeline_available
 from .imports import import_path, scan_for_candidates
 from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
+from .auto_update import UpdateError
+from .auto_update_config import create_updater
 
 
 # ───────────── App release version ─────────────
@@ -143,6 +145,17 @@ class SettingsBody(BaseModel):
     hf_token: Optional[str] = None   # pass "" to clear; omit field to leave unchanged
 
 
+class AutoUpdateSettingsBody(BaseModel):
+    mode: str
+    frequency: str
+    maintenance_hour: int
+    idle_only: bool = True
+
+
+class AutoUpdateRequestBody(BaseModel):
+    after_current: bool = False
+
+
 class TokenTestBody(BaseModel):
     hf_token: Optional[str] = None   # if omitted, tests the currently-saved token
 
@@ -172,6 +185,20 @@ class Txt2VideoBody(BaseModel):
     aspect_ratio: Optional[str] = Field(None, max_length=16)
     resolution: Optional[str] = Field(None, max_length=16)
     provider_params: Optional[dict] = None
+
+
+def _automatic_update_blockers() -> list[str]:
+    reasons: list[str] = []
+    generation_states = {str(job.state) for job in gen_manager.list_jobs()}
+    if generation_states & {"queued", "running", "cancelling"}:
+        reasons.append("a local or cloud video generation is queued or running")
+    download_states = {str(job.state) for job in manager.list_jobs()}
+    if download_states & {"queued", "running", "paused", "cancelling"}:
+        reasons.append("a model download is active")
+    return reasons
+
+
+auto_updater = create_updater(readiness=_automatic_update_blockers)
 
 
 # ───────────── API: meta ─────────────
@@ -258,6 +285,48 @@ def app_release_version() -> dict:
         "app_version": APP_VERSION,
         "title": app.title,
     }
+
+
+@app.get("/api/auto-update/status")
+def automatic_update_status() -> dict:
+    return auto_updater.public_status()
+
+
+@app.get("/api/auto-update/readiness")
+def automatic_update_readiness() -> dict:
+    return auto_updater.readiness_status()
+
+
+@app.post("/api/auto-update/settings")
+def automatic_update_settings(body: AutoUpdateSettingsBody) -> dict:
+    try:
+        return auto_updater.save_settings(body.model_dump())
+    except UpdateError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/auto-update/check")
+def automatic_update_check() -> dict:
+    try:
+        return auto_updater.trigger_check()
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/auto-update/update")
+def automatic_update_run(body: AutoUpdateRequestBody) -> dict:
+    try:
+        return auto_updater.trigger_update(after_current=body.after_current)
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/auto-update/retry")
+def automatic_update_retry() -> dict:
+    try:
+        return auto_updater.retry()
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/system")
