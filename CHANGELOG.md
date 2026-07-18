@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.8.1] — 2026-07-18
+
+### Fixed — automatic-update settings stay stable while editing
+
+- Kept unsaved mode, frequency, and maintenance-time choices separate from
+  live updater status. The five-second poll no longer restores old values while
+  a user is configuring Automatic or Notify only.
+- Replaced the cramped native controls with consistent mode cards, styled
+  scheduling controls, one primary save action, and contextual update actions.
+- Corrected the success-state styles to use Video Studio's existing `--good`
+  color token; the copied panel referenced an undefined `--ok` token.
+
+### Verification
+
+- Verified draft persistence across repeated status polls, responsive layout,
+  JavaScript syntax, and the full test suite. Rendering, cloud jobs, the updater,
+  scheduler, launcher, and dependency manifests were deliberately unchanged.
+
+---
+
 ## [0.8.0] — 2026-07-15
 
 ### Added — safe optional automatic updates
