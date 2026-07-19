@@ -89,8 +89,13 @@ function studio() {
 
     // ──────── Generate computed ────────
     get cachedModels() {
-      // Cloud models are always usable (no download); local ones must be cached.
+      // Cloud models need no download, so keep them visible in Generate even
+      // before linking a key; the dropdown disables unlinked providers. Local
+      // models must be cached before they can appear here.
       return this.models.filter((m) => m.is_cloud || (m.cache && m.cache.state === "cached"));
+    },
+    get selectableGenerationModels() {
+      return this.generationModels.filter((m) => this.isModelSelectable(m));
     },
     get anyCloudUsable() {
       return this.models.some((m) => m.is_cloud && m.key_set && m.paid_on);
@@ -130,6 +135,19 @@ function studio() {
         }
         return true;
       });
+    },
+    get generationModelGroups() {
+      const groups = [];
+      const local = this.generationModels.filter((m) => !m.is_cloud);
+      if (local.length) groups.push({ id: "local", label: "Local · this Mac", models: local });
+      const byProvider = {};
+      for (const model of this.generationModels.filter((m) => m.is_cloud)) {
+        (byProvider[model.provider] ||= []).push(model);
+      }
+      for (const provider of Object.keys(byProvider).sort((a, b) => this.providerName(a).localeCompare(this.providerName(b)))) {
+        groups.push({ id: `cloud-${provider}`, label: `Cloud · ${this.providerName(provider)}`, models: byProvider[provider] });
+      }
+      return groups;
     },
     get estimatedCloudCost() {
       const m = this.selectedModel;
@@ -277,6 +295,28 @@ function studio() {
     cloudStatusLabel(m) {
       return m.status === "deprecated" ? "deprecated" : (m.status === "new" ? "new" : "cloud");
     },
+    providerName(key) {
+      const linked = this.providers.find((p) => p.key === key)?.name;
+      if (linked) return linked;
+      const family = Object.values(this.families || {}).find((f) => f.provider === key);
+      return String(family?.label || key || "Cloud").replace(/\s*·\s*cloud$/i, "");
+    },
+    modelSourceLabel(model) {
+      return model?.is_cloud ? this.providerName(model.provider) : "Local";
+    },
+    modelOptionLabel(model) {
+      const access = model.is_cloud && !model.key_set ? " · API key required" : "";
+      return `${model.label} · ${this.modelSourceLabel(model)}${access}`;
+    },
+    isModelSelectable(model) {
+      return !!model && (!model.is_cloud || !!model.key_set);
+    },
+    cloudAccessLabel(model) {
+      if (!model?.is_cloud) return "Local model";
+      if (!model.key_set) return `Add ${this.providerName(model.provider)} API key`;
+      if (!model.paid_on) return `Enable ${this.providerName(model.provider)} paid use`;
+      return `${this.providerName(model.provider)} ready`;
+    },
 
     async refreshHealth() {
       try {
@@ -305,8 +345,8 @@ function studio() {
         this.models = data.models || [];
         this._initFamilyLibrary();
         this._syncDownloadsToModels();
-        if (!this.gen.repo && this.cachedModels.length) {
-          this.gen.repo = this.cachedModels[0].repo;
+        if (!this.selectableGenerationModels.some((m) => m.repo === this.gen.repo)) {
+          this.gen.repo = this.selectableGenerationModels[0]?.repo || "";
           this.applyModelDefaults();
         }
       } catch (e) {
@@ -471,12 +511,13 @@ function studio() {
       const fits = (m) => this.fitFor(m.min_unified_memory_gb).state !== "risky";
       const heavy = (m) => (Number(m.min_unified_memory_gb) || 0) * 1000 + (Number(m.size_gb) || 0);
       const hasCap = (m, c) => (m.capabilities || []).includes(c);
+      const localModels = this.models.filter((m) => !m.is_cloud);
       const pickHeavy = (pred) => {
-        const c = this.models.filter((m) => fits(m) && pred(m));
+        const c = localModels.filter((m) => fits(m) && pred(m));
         return c.length ? c.slice().sort((a, b) => heavy(b) - heavy(a))[0] : null;
       };
       const pickLight = (pred) => {
-        const c = this.models.filter((m) => fits(m) && pred(m));
+        const c = localModels.filter((m) => fits(m) && pred(m));
         return c.length ? c.slice().sort((a, b) => (a.size_gb || 0) - (b.size_gb || 0))[0] : null;
       };
       const buckets = [
@@ -507,7 +548,7 @@ function studio() {
           const caps = new Set(m.capabilities || []);
           for (const want of f.capabilities) if (!caps.has(want)) return false;
         }
-        if (f.fitLevel && f.fitLevel !== "all") {
+        if (!m.is_cloud && f.fitLevel && f.fitLevel !== "all") {
           const st = this.fitFor(m.min_unified_memory_gb).state;
           if (f.fitLevel === "ok" && st !== "ok") return false;
           if (f.fitLevel === "tight" && st !== "tight") return false;
@@ -515,7 +556,8 @@ function studio() {
         }
         if (q) {
           const useCases = (m.use_cases || []).map((item) => item.text || "").join(" ");
-          const hay = [m.label, m.variant_label, m.role, m.repo, m.family_label, m.best_for, useCases]
+          const hay = [m.label, m.variant_label, m.role, m.repo, m.family_label, m.best_for,
+            m.is_cloud ? this.providerName(m.provider) : "local", useCases]
             .filter(Boolean).join(" ").toLowerCase();
           if (!hay.includes(q)) return false;
         }
@@ -566,6 +608,22 @@ function studio() {
           maxSize: Math.max(...models.map((m) => Number(m.size_gb) || 0)),
         };
       });
+    },
+    get visibleModelLanes() {
+      const groups = this.visibleFamilyGroups;
+      const lanes = [
+        {
+          id: "local", eyebrow: "Runs on this Mac", label: "Local models",
+          summary: "Downloaded once, rendered privately with this Mac's GPU and unified memory.",
+          families: groups.filter((family) => !family.is_cloud),
+        },
+        {
+          id: "cloud", eyebrow: "Runs on a provider", label: "Cloud models",
+          summary: "No download or local RAM required. Unlinked providers stay visible but unavailable until an API key is added.",
+          families: groups.filter((family) => family.is_cloud),
+        },
+      ];
+      return lanes.filter((lane) => lane.families.length);
     },
     get hasActiveFilters() {
       const f = this.modelFilters;
@@ -653,10 +711,12 @@ function studio() {
       return min === max ? this.formatDuration(min) : `${this.formatDuration(min)}–${this.formatDuration(max)}`;
     },
     modelResolution(model) {
+      if (model.is_cloud) return (model.resolutions || []).join(", ") || "Provider default";
       const d = model.video_defaults || {};
       return d.width && d.height ? `${d.width}×${d.height}` : "Custom";
     },
     modelDurationSeconds(model) {
+      if (model.is_cloud) return Number(model.max_duration_s || 0);
       const d = model.video_defaults || {};
       return d.frames && d.fps ? Number(d.frames) / Number(d.fps) : 0;
     },
@@ -671,12 +731,17 @@ function studio() {
       return `${day.day} · $${Number(day.total || 0).toFixed(4)}${parts.length ? " · " + parts.join(" · ") : ""}`;
     },
     modelClipProfile(model) {
+      if (model.is_cloud) return `${this.formatDuration(this.modelDurationSeconds(model))} max · provider managed`;
       const d = model.video_defaults || {};
       return `${this.formatDuration(this.modelDurationSeconds(model))} · ${d.frames || "—"} frames · ${d.fps || "—"} fps`;
     },
-    modelRuntimeLabel() { return "PyTorch · MPS"; },
+    modelRuntimeLabel(model) {
+      return model.is_cloud ? `${this.providerName(model.provider)} · Cloud API` : "Local · PyTorch · MPS";
+    },
     modelRowClass(model) {
-      return [model.cache?.state || "absent", this.isModelReady(model.repo) ? "ready" : ""].filter(Boolean).join(" ");
+      return [model.cache?.state || "absent", model.is_cloud ? "cloud" : "local",
+        model.is_cloud && !model.key_set ? "cloud-unlinked" : "",
+        !model.is_cloud && this.isModelReady(model.repo) ? "ready" : ""].filter(Boolean).join(" ");
     },
     shortCapabilityLabel(c) {
       return { txt2video: "Text", img2video: "Image", video2video: "Video" }[c] || c;
@@ -705,8 +770,8 @@ function studio() {
     },
     onModelChange() { this.applyModelDefaults(); },
     onGenerationFilterChange() {
-      if (!this.generationModels.some((m) => m.repo === this.gen.repo)) {
-        this.gen.repo = this.generationModels[0]?.repo || "";
+      if (!this.selectableGenerationModels.some((m) => m.repo === this.gen.repo)) {
+        this.gen.repo = this.selectableGenerationModels[0]?.repo || "";
         this.applyModelDefaults();
       }
     },

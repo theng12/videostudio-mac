@@ -49,7 +49,7 @@
         <div class="workspace-meta" aria-label="Current video workspace status">
           <div class="workspace-stat">
             <span>Model</span>
-            <strong x-text="selectedModel?.label || (cachedModels.length ? 'Choose a model' : 'No model cached')"></strong>
+            <strong x-text="selectedModel ? selectedModel.label + ' · ' + modelSourceLabel(selectedModel) : (selectableGenerationModels.length ? 'Choose a model' : 'No model ready')"></strong>
           </div>
           <div class="workspace-stat mode-stat">
             <span>Mode</span>
@@ -78,7 +78,7 @@
       </div>
 
       <!-- no usable models -->
-      <div class="banner info" x-show="cachedModels.length === 0">
+      <div class="banner info" x-show="selectableGenerationModels.length === 0">
         No models ready yet. <a href="#" @click.prevent="tab='models'">Download</a> a local model
         (start with <strong>CogVideoX-2B</strong> for the lowest local memory tier), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
       </div>
@@ -115,11 +115,20 @@
           <label class="field">
             <span>Model</span>
             <select x-model="gen.repo" @change="onModelChange()">
-              <template x-for="m in generationModels" :key="m.repo">
-                <option :value="m.repo" x-text="m.label"></option>
+              <template x-for="group in generationModelGroups" :key="group.id">
+                <optgroup :label="group.label">
+                  <template x-for="m in group.models" :key="m.repo">
+                    <option :value="m.repo" :disabled="m.is_cloud && !m.key_set" x-text="modelOptionLabel(m)"></option>
+                  </template>
+                </optgroup>
               </template>
             </select>
           </label>
+          <div class="model-source-note" x-show="selectedModel" x-cloak>
+            <span class="model-source-badge" :class="selectedModel?.is_cloud ? 'cloud' : 'local'"
+                  x-text="modelSourceLabel(selectedModel)"></span>
+            <span x-text="selectedModel?.is_cloud ? 'Cloud API · no local download' : 'Local · runs on this Mac'"></span>
+          </div>
           <p class="hint" x-show="generationModels.length === 0">No ready model matches these filters.</p>
 
           <div class="field">
@@ -417,12 +426,21 @@
 
       <section class="family-library" x-show="filteredModelTotalCount>0">
         <div class="family-library-heading">
-          <div><span class="models-eyebrow">Browse by architecture</span><h2>Model families</h2></div>
-          <p>Open a family to compare every compatible variant.</p>
+          <div><span class="models-eyebrow">Choose where it runs</span><h2>Available models</h2></div>
+          <p>Local models stay on this Mac. Cloud models run through the named provider.</p>
         </div>
-        <div class="family-stack">
-          <template x-for="family in visibleFamilyGroups" :key="family.id">
-            <article class="family-panel" :class="{'is-open': !isFamilyCollapsed(family.id)}" :style="familyStyle(family)">
+        <div class="model-lanes">
+          <template x-for="lane in visibleModelLanes" :key="lane.id">
+            <section class="model-lane" :class="'model-lane-' + lane.id">
+              <header class="model-lane-head">
+                <div><span class="models-eyebrow" x-text="lane.eyebrow"></span><h2 x-text="lane.label"></h2></div>
+                <p x-text="lane.summary"></p>
+              </header>
+              <div class="family-stack">
+          <template x-for="family in lane.families" :key="family.id">
+            <article class="family-panel"
+                     :class="{'is-open': !isFamilyCollapsed(family.id), 'is-unlinked': family.is_cloud && !family.models.some((m) => m.key_set)}"
+                     :style="familyStyle(family)">
               <button class="family-panel-trigger" @click="toggleFamilyCollapsed(family.id)">
                 <span class="family-monogram" x-text="family.monogram || family.label.slice(0, 3)"></span>
                 <span class="family-panel-copy">
@@ -430,6 +448,8 @@
                     <strong x-text="family.label"></strong>
                     <span class="family-recommended" x-show="family.id==='cogvideox'">Lowest-memory tier</span>
                     <span class="family-cached" x-show="family.cachedCount" x-text="family.cachedCount + ' downloaded'"></span>
+                    <span class="family-provider" x-show="family.is_cloud" x-text="providerName(family.provider)"></span>
+                    <span class="family-key-needed" x-show="family.is_cloud && !family.models.some((m) => m.key_set)">API key required</span>
                   </span>
                   <span class="family-summary" x-text="family.summary"></span>
                   <span class="family-facts">
@@ -437,8 +457,9 @@
                     <span x-text="familyModeSummary(family)"></span>
                     <span x-text="familyResolutionSummary(family)"></span>
                     <span x-text="familyDurationSummary(family)"></span>
-                    <span x-text="familySizeSummary(family) + ' download'"></span>
-                    <span x-text="familyRamSummary(family) + ' RAM'"></span>
+                    <span x-show="!family.is_cloud" x-text="familySizeSummary(family) + ' download'"></span>
+                    <span x-show="!family.is_cloud" x-text="familyRamSummary(family) + ' RAM'"></span>
+                    <span x-show="family.is_cloud" x-text="family.models.some((m) => m.key_set) ? 'API key linked' : 'Unavailable until linked'"></span>
                   </span>
                 </span>
                 <span class="family-chevron" x-text="isFamilyCollapsed(family.id) ? '+' : '−'"></span>
@@ -447,7 +468,9 @@
               <div class="family-panel-body" x-show="!isFamilyCollapsed(family.id)" x-cloak>
                 <div class="family-guidance"><span>Family notes</span><p x-text="family.how_to_use"></p></div>
                 <div class="variant-table-head">
-                  <span>Variant and modes</span><span>Clip profile</span><span>Download</span><span>Memory</span><span></span>
+                  <span>Variant and modes</span><span>Clip profile</span>
+                  <span x-text="family.is_cloud ? 'Price' : 'Download'"></span>
+                  <span x-text="family.is_cloud ? 'Runtime' : 'Memory'"></span><span></span>
                 </div>
                 <div class="variant-list">
                   <template x-for="m in family.models" :key="m.repo">
@@ -455,8 +478,9 @@
                       <div class="variant-identity">
                         <div class="variant-title-line">
                           <h3 x-text="m.variant_label || m.label"></h3>
+                          <span class="variant-source local" x-show="!m.is_cloud">Local</span>
                           <span class="variant-role" x-text="m.role" x-show="m.role && !m.is_cloud"></span>
-                          <span class="variant-role" x-show="m.is_cloud" x-text="m.provider"></span>
+                          <span class="variant-source cloud" x-show="m.is_cloud" x-text="providerName(m.provider)"></span>
                           <span class="variant-role" x-show="m.status==='new'">New</span>
                           <span class="gated" x-show="m.status==='deprecated'">Deprecated</span>
                           <span class="gated" x-show="m.gated">Gated</span>
@@ -483,7 +507,7 @@
                                 :title="fitFor(m.min_unified_memory_gb).hint" x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span></div>
                         </template>
                         <template x-if="m.is_cloud">
-                          <div><strong>Cloud</strong><small>no local RAM</small></div>
+                          <div><strong x-text="providerName(m.provider)"></strong><small>cloud · no local RAM</small></div>
                         </template>
                       </div>
                       <div class="variant-action">
@@ -497,7 +521,9 @@
                         <template x-if="m.is_cloud">
                           <div>
                             <button class="primary" x-show="m.key_set && m.paid_on" @click="useInGenerate(m.repo)">Use model</button>
-                            <button class="ghost" x-show="!(m.key_set && m.paid_on)" @click="tab='settings'">Link in Settings</button>
+                            <button class="ghost" x-show="!m.key_set" @click="tab='settings'"
+                                    :title="'Add a ' + providerName(m.provider) + ' API key in Settings'">Add API key</button>
+                            <button class="ghost" x-show="m.key_set && !m.paid_on" @click="tab='settings'">Enable paid use</button>
                           </div>
                         </template>
                       </div>
@@ -521,6 +547,8 @@
                           <span class="engine-ready" x-show="m.cache.state==='cached' && isModelReady(m.repo)">Engine ready</span>
                           <span class="engine-missing" x-show="m.cache.state==='cached' && !isModelReady(m.repo)"
                                 :title="'Missing: ' + (modelMissingDeps(m.repo)||[]).join(', ')">Generation engine needs installation</span>
+                          <span class="cloud-ready" x-show="m.is_cloud && m.key_set" x-text="cloudAccessLabel(m)"></span>
+                          <span class="cloud-missing" x-show="m.is_cloud && !m.key_set" x-text="cloudAccessLabel(m)"></span>
                           <code x-text="m.repo"></code>
                           <button class="link-btn" x-show="m.cache.state==='cached' && m.cache.path" @click="revealInFolder(m.cache.path)">Reveal in Finder</button>
                         </div>
@@ -530,6 +558,9 @@
                 </div>
               </div>
             </article>
+          </template>
+              </div>
+            </section>
           </template>
         </div>
       </section>

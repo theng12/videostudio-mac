@@ -21,6 +21,9 @@ a standalone single-modality launcher.
 - **Video → Video** — restyle an existing clip guided by a prompt (CogVideoX).
 - **Model catalog + downloads** — browse, download, and manage Hugging Face
   weights with live progress; downloads are independent of generation.
+- **Clear local/cloud lanes** — the library and Generate selector show where
+  each model runs, which provider it uses, and whether an API key or paid-use
+  permission is still needed.
 - **In-browser player** — generated `.mp4` clips play inline; download or reveal
   in Finder.
 

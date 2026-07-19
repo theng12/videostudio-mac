@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.8.3] — 2026-07-19
+
+### Improved — clear local and cloud model selection
+
+- Split the model library into Local and Cloud lanes and added provider labels,
+  runtime details, API-key readiness, cloud pricing, and local/cloud badges.
+- Grouped the Generate model selector by where each model runs. Cloud options
+  remain visible for discovery but cannot be selected until their API key is
+  linked, with direct Settings guidance instead of an ambiguous unavailable
+  state.
+- Kept memory-fit filtering local-only so cloud models are not incorrectly
+  hidden by this Mac's RAM profile.
+
+### Verification
+
+- JavaScript syntax and all 61 backend/frontend contract tests pass. Generation
+  dispatch, provider billing, model catalog data, and launcher scripts were left
+  unchanged; this release clarifies existing model access only.
+
+---
+
 ## [0.8.2] — 2026-07-19
 
 ### Fixed — persistent Generation maintenance and release notes
