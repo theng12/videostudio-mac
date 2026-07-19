@@ -15,6 +15,19 @@ module.exports = {
     // background service. When the service IS installed we return a dedicated
     // "service mode" menu below instead.
     const serviceItem = { icon: "fa-solid fa-heart-pulse", text: "Install as Startup Service", href: "service.js" }
+    // Keep these maintenance/help actions available in every safe launcher
+    // state. Generation installation is intentionally hidden only while
+    // another install/update/reset operation owns the environment.
+    const generationItem = {
+      icon: "fa-solid fa-wand-magic-sparkles",
+      text: generationInstalled ? "Reinstall Generation" : "Install Generation",
+      href: "install_generation.js"
+    }
+    const whatsNewItem = {
+      icon: "fa-solid fa-bullhorn",
+      text: "What's New",
+      href: "whats_new.js"
+    }
     const running = {
       install: info.running("install.js"),
       install_generation: info.running("install_generation.js"),
@@ -30,7 +43,7 @@ module.exports = {
         icon: "fa-solid fa-plug",
         text: "Installing",
         href: "install.js"
-      }]
+      }, whatsNewItem]
     }
     if (running.install_generation) {
       return [{
@@ -38,7 +51,7 @@ module.exports = {
         icon: "fa-solid fa-wand-magic-sparkles",
         text: "Installing Generation",
         href: "install_generation.js"
-      }]
+      }, whatsNewItem]
     }
     if (running.update) {
       return [{
@@ -46,7 +59,7 @@ module.exports = {
         icon: "fa-solid fa-rotate",
         text: "Updating",
         href: "update.js"
-      }]
+      }, whatsNewItem]
     }
     if (running.updateRestart) {
       return [{
@@ -54,7 +67,7 @@ module.exports = {
         icon: "fa-solid fa-rotate",
         text: "Updating & Restarting",
         href: "update_and_restart.js"
-      }]
+      }, whatsNewItem]
     }
     if (running.reset) {
       return [{
@@ -62,7 +75,7 @@ module.exports = {
         icon: "fa-solid fa-broom",
         text: "Resetting",
         href: "reset.js"
-      }]
+      }, whatsNewItem]
     }
 
     if (!installed) {
@@ -71,7 +84,7 @@ module.exports = {
         icon: "fa-solid fa-plug",
         text: "Install",
         href: "install.js"
-      }]
+      }, whatsNewItem]
     }
 
     // ── Service mode ──
@@ -93,8 +106,10 @@ module.exports = {
         { icon: "fa-solid fa-folder-open", text: "Service Logs", href: "logs/service?fs=true" },
         { icon: "fa-solid fa-film", text: "Outputs", href: "app/output?fs=true" },
         { icon: "fa-solid fa-folder-tree", text: "HF Cache", href: "cache/HF_HOME/hub?fs=true" },
+        generationItem,
         { icon: "fa-regular fa-circle-xmark", text: "Uninstall Startup Service", href: "unservice.js" },
-        { icon: "fa-solid fa-rotate", text: "Update", href: "update.js" }
+        { icon: "fa-solid fa-rotate", text: "Update", href: "update.js" },
+        whatsNewItem
       ]
     }
 
@@ -165,12 +180,9 @@ module.exports = {
             text: "Outputs",
             href: "app/output?fs=true"
           },
-          {
-            icon: "fa-solid fa-wand-magic-sparkles",
-            text: generationInstalled ? "Reinstall Generation" : "Install Generation",
-            href: "install_generation.js"
-          },
-          serviceItem
+          generationItem,
+          serviceItem,
+          whatsNewItem
         ]
       }
       return [{
@@ -178,7 +190,7 @@ module.exports = {
         icon: "fa-solid fa-terminal",
         text: "Terminal",
         href: "start.js"
-      }]
+      }, generationItem, whatsNewItem]
     }
 
     return [
@@ -198,11 +210,7 @@ module.exports = {
         text: "Outputs",
         href: "app/output?fs=true"
       },
-      {
-        icon: "fa-solid fa-wand-magic-sparkles",
-        text: generationInstalled ? "Reinstall Generation" : "Install Generation",
-        href: "install_generation.js"
-      },
+      generationItem,
       serviceItem,
       {
         icon: "fa-solid fa-rotate",
@@ -218,7 +226,8 @@ module.exports = {
         icon: "fa-regular fa-circle-xmark",
         text: "Reset",
         href: "reset.js"
-      }
+      },
+      whatsNewItem
     ]
   }
 }

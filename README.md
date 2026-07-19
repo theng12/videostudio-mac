@@ -48,6 +48,17 @@ a standalone single-modality launcher.
 
 Gated repos need a Hugging Face token — paste it in **Settings**.
 
+**Install Generation / Reinstall Generation** stays in the Pinokio sidebar
+whether Video Studio is stopped, running through **Start**, or running as the
+startup service. Click it directly; the installer safely refreshes the locked
+engine, verifies it, and restarts the active server mode for you. During another
+install, update, or reset, it is temporarily hidden to prevent concurrent
+changes to the same environment.
+
+**What's New** is always available in the sidebar, including while installation
+or updating is in progress. It opens the full release notes with the latest
+version first.
+
 The server binds `0.0.0.0:47872` so other devices on your LAN / Tailscale can
 reach the API directly. On this machine it's also at `http://localhost:47872`.
 

@@ -10,6 +10,30 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.8.2] — 2026-07-19
+
+### Fixed — persistent Generation maintenance and release notes
+
+- Kept **Install Generation / Reinstall Generation** visible while the app is
+  stopped, starting, running through Pinokio, or managed by the startup service.
+  The existing installer remains mode-aware: it verifies the locked engine and
+  restarts the active server mode without requiring a manual stop first.
+- Kept the action hidden only while Install, Update, Reset, or Generation setup
+  already owns the environment, preventing concurrent package changes.
+- Added a persistent **What's New** action in every launcher state. It opens the
+  complete changelog even when the web server is stopped or maintenance is in
+  progress.
+
+### Verification
+
+- Exercised the dynamic menu with mocked stopped, starting, running, service,
+  first-install, and maintenance states; verified the correct Install/Reinstall
+  label and persistent release-notes action. Also verified launcher syntax, the
+  documented `fs.cat` release-notes flow, the full automated test suite, and the
+  unchanged URL-capture contract in `start.js`.
+
+---
+
 ## [0.8.1] — 2026-07-18
 
 ### Fixed — automatic-update settings stay stable while editing
