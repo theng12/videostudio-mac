@@ -85,6 +85,7 @@ function studio() {
     deleteArmed: null,       // job.id currently armed for a two-click single delete
     pruneArmed: null,        // prune mode ("keep50" | "old30") armed for a two-click confirm
     outputStats: { bytes: 0, count: 0, loaded: false },
+    storagePolicy: { enabled: true, retention_days: 3, max_gb: 80, used_bytes: 0, over_limit: false, loaded: false, busy: false, message: "" },
     _lastDoneCount: 0,
 
     // ──────── Generate computed ────────
@@ -193,6 +194,7 @@ function studio() {
       this.openDownloadsStream();
       this.openGenerateStream();
       this.refreshOutputStats();
+      this.refreshStoragePolicy();
       this.loadProviders().then(() => this.loadSpend());
       setInterval(() => this.refreshHealth(), 8000);
       setInterval(() => this.loadDiagnostics(), 15000);
@@ -976,6 +978,40 @@ function studio() {
         const d = await r.json();
         this.outputStats = { bytes: d.bytes || 0, count: d.count || 0, loaded: true };
       } catch (_) { /* keep last */ }
+    },
+    async refreshStoragePolicy() {
+      try {
+        const r = await fetch("/api/storage-policy");
+        if (!r.ok) return;
+        this.storagePolicy = { ...this.storagePolicy, ...(await r.json()), loaded: true, busy: false };
+      } catch (_) { /* keep last */ }
+    },
+    async saveStoragePolicy() {
+      this.storagePolicy.busy = true; this.storagePolicy.message = "Saving policy…";
+      try {
+        const r = await fetch("/api/storage-policy", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !!this.storagePolicy.enabled, retention_days: Number(this.storagePolicy.retention_days), max_gb: Number(this.storagePolicy.max_gb) }) });
+        if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+        const d = await r.json();
+        this.storagePolicy = { ...this.storagePolicy, ...d, loaded: true, busy: false, message: "Saved. This Mac will enforce the policy automatically." };
+        this.pushToast(`Storage policy saved · ${d.retention_days} days · ${d.max_gb} GB cap`, "success");
+      } catch (e) {
+        this.storagePolicy.busy = false; this.storagePolicy.message = String(e);
+        this.pushToast("Couldn't save storage policy: " + e, "error");
+      }
+    },
+    async cleanStoragePolicyNow() {
+      this.storagePolicy.busy = true; this.storagePolicy.message = "Checking completed clips…";
+      try {
+        const r = await fetch("/api/storage-policy/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+        const d = await r.json();
+        this.storagePolicy = { ...this.storagePolicy, ...d, loaded: true, busy: false, message: `Cleanup complete · ${d.deleted || 0} removed · ${this.fmtBytes(d.freed_bytes || 0)} freed.` };
+        await this.refreshOutputStats();
+        this.pushToast(`Cleanup complete · ${d.deleted || 0} clip${d.deleted === 1 ? "" : "s"} removed`, "success");
+      } catch (e) {
+        this.storagePolicy.busy = false; this.storagePolicy.message = String(e);
+        this.pushToast("Couldn't clean video outputs: " + e, "error");
+      }
     },
     /** mode: "keep50" keeps the newest 50; "old30" deletes clips older than 30 days. */
     async pruneOutputs(mode) {

@@ -88,6 +88,19 @@ Monitor it through `GET /api/auto-update/status` and
 endpoints under `/api/auto-update/`. Logs are in `logs/auto_update/`; switching
 Off unloads the schedule immediately.
 
+## Local output retention
+
+Completed MP4s are temporary local backups. Automatic cleanup is enabled by
+default, keeps them for three days, and enforces an 80 GB hard cap by deleting
+the oldest completed clips first. Active jobs, models, source uploads,
+credentials, provider state, and settings are excluded.
+
+```text
+GET  /api/storage-policy
+PUT  /api/storage-policy          # { enabled, retention_days, max_gb }
+POST /api/storage-policy/cleanup  # optional { target_bytes }
+```
+
 ## API
 
 Base URL: `http://localhost:47872`. Interactive docs at `/docs` (Swagger) and

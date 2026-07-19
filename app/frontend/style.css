@@ -163,6 +163,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .output-disk-info { color: var(--muted); font-size: 12px; }
 .output-disk-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 
+.storage-policy-card { margin: 16px 0; padding: 18px; border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border)); border-radius: 14px; background: radial-gradient(circle at 100% 0, color-mix(in srgb, var(--accent) 10%, transparent), transparent 34%), var(--panel); box-shadow: 0 12px 30px rgba(0,0,0,.14); }
+.storage-policy-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }.storage-policy-head h3 { margin:2px 0 4px; font-size:16px; }.storage-policy-head p { margin:0; max-width:650px; color:var(--muted); font-size:12px; }
+.storage-policy-kicker { color:var(--accent); font:700 10px/1.2 ui-monospace,Menlo,monospace; letter-spacing:.11em; text-transform:uppercase; }
+.storage-policy-meter { display:grid; min-width:122px; padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:var(--panel-2); text-align:right; }.storage-policy-meter strong { color:var(--good); font-size:14px; }.storage-policy-meter span { color:var(--muted); font-size:10px; }.storage-policy-meter.is-over strong { color:var(--bad); }
+.storage-policy-controls { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-top:16px; }.storage-policy-toggle { display:flex; align-items:center; gap:8px; min-height:39px; padding:0 12px; border:1px solid var(--border); border-radius:9px; background:var(--panel-2); cursor:pointer; }.storage-policy-toggle input { width:auto; accent-color:var(--accent); }
+.storage-policy-field { display:grid; gap:5px; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }.storage-policy-field select,.storage-policy-field input { min-height:39px; border-radius:9px; }.storage-policy-field select { min-width:112px; }.storage-policy-number { display:flex; align-items:center; overflow:hidden; border:1px solid var(--border); border-radius:9px; background:var(--panel-2); }.storage-policy-number input { width:82px; border:0; border-radius:0; }.storage-policy-number span { padding-right:10px; color:var(--muted); font-size:11px; }
+.storage-policy-actions { display:flex; gap:8px; margin-left:auto; }.storage-policy-actions button { min-height:39px; border-radius:9px; }.storage-policy-note { margin:12px 0 0; color:var(--muted); font-size:11px; }
+@media (max-width:720px) { .storage-policy-head { display:grid; }.storage-policy-meter { justify-self:stretch; text-align:left; }.storage-policy-actions { width:100%; margin-left:0; }.storage-policy-actions button { flex:1; } }
+
 .pill { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 20px; background: var(--panel-2); border: 1px solid var(--border); }
 .pill.running { color: var(--accent); border-color: var(--accent); }
 .pill.queued { color: var(--warn); border-color: var(--warn); }

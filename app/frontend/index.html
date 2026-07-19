@@ -300,6 +300,20 @@
             </div>
           </template>
 
+          <section class="storage-policy-card" x-show="storagePolicy.loaded" x-cloak>
+            <div class="storage-policy-head">
+              <div><span class="storage-policy-kicker">Local backup protection</span><h3>Automatic output cleanup</h3><p>Generated videos are temporary local backups. Models, source uploads, settings, and active jobs are never touched.</p></div>
+              <span class="storage-policy-meter" :class="{'is-over': storagePolicy.over_limit}"><strong x-text="fmtBytes(storagePolicy.used_bytes || 0)"></strong><span x-text="'of ' + storagePolicy.max_gb + ' GB'"></span></span>
+            </div>
+            <div class="storage-policy-controls">
+              <label class="storage-policy-toggle"><input type="checkbox" x-model="storagePolicy.enabled" /><span>Automatic cleanup</span></label>
+              <label class="storage-policy-field"><span>Keep for</span><select x-model.number="storagePolicy.retention_days"><option :value="1">1 day</option><option :value="3">3 days</option><option :value="7">7 days</option><option :value="30">30 days</option><option :value="90">90 days</option></select></label>
+              <label class="storage-policy-field"><span>Storage cap</span><div class="storage-policy-number"><input type="number" min="1" max="1000" step="1" x-model.number="storagePolicy.max_gb" /><span>GB</span></div></label>
+              <div class="storage-policy-actions"><button class="ghost" :disabled="storagePolicy.busy" @click="cleanStoragePolicyNow()">Clean now</button><button class="primary" :disabled="storagePolicy.busy" @click="saveStoragePolicy()" x-text="storagePolicy.busy ? 'Saving…' : 'Save policy'"></button></div>
+            </div>
+            <p class="storage-policy-note" x-text="storagePolicy.message || 'Cleanup runs hourly and deletes the oldest completed clips first when the cap is reached.'"></p>
+          </section>
+
           <!-- Disk usage + prune (needs the latest backend; hidden until it responds).
                Video files are large, so this is high-value housekeeping. -->
           <div class="output-disk" x-show="outputStats.loaded && outputStats.count > 0" x-cloak>

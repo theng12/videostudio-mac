@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.8.4] — 2026-07-19
+
+### Added — automatic local output protection
+
+- Added enabled-by-default three-day retention and an 80 GB hard cap for
+  generated MP4 backups, enforced hourly with oldest-first eviction.
+- Added a modern policy card with live usage, retention, capacity, Save policy,
+  and Clean now controls, backed by authenticated fleet endpoints for Hub use.
+- Restricted cleanup to completed MP4s in `app/output`. Active jobs, model
+  caches, source uploads, provider state, credentials, and settings are never
+  eligible.
+
+### Verification
+
+- Added age, cap, active-job, upload-scope, and API persistence regression
+  tests. All 61 tests, Python compilation, and JavaScript syntax checks pass.
+  Launchers and generation/provider dependencies were left unchanged.
+
+---
+
 ## [0.8.3] — 2026-07-19
 
 ### Improved — clear local and cloud model selection

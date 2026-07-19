@@ -8,6 +8,7 @@ app/backend/__pycache__/
 app/backend/providers/__pycache__/
 app/backend/settings.json
 app/backend/settings.json.tmp
+app/backend/storage_policy.json
 app/backend/cloud_catalog.json
 app/backend/cloud_catalog.json.tmp
 # Cloud spend ledger (records API usage/costs; machine-specific)
