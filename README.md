@@ -107,6 +107,29 @@ Monitor it through `GET /api/auto-update/status` and
 endpoints under `/api/auto-update/`. Logs are in `logs/auto_update/`; switching
 Off unloads the schedule immediately.
 
+## Local model memory
+
+Video Studio now keeps the most recent successful local MLX or Diffusers
+pipeline loaded by default so a repeat render with the same model starts
+faster. Settings offers three opt-in alternatives: **Balanced** unloads after
+10 idle minutes, **Memory Saver** after 2 minutes, and **Immediate** after every
+completed local render. **Performance** is the default.
+
+Use **Release Memory / Unload Model** at any time the local queue is idle.
+Cleanup drops the pipeline and clears available MLX/Metal and PyTorch MPS
+allocator caches. Failed and cancelled local renders still unload immediately
+for safety. Cloud jobs, downloaded weights, uploads, and output videos are not
+affected.
+
+```text
+GET  /api/memory-policy
+PUT  /api/memory-policy   # { "mode": "performance|balanced|memory_saver|immediate" }
+POST /api/memory/release
+```
+
+After Update and the next normal restart, Activity Monitor labels the backend
+**Video Studio Mac** instead of a generic Python process.
+
 ## Local output retention
 
 Completed MP4s are temporary local backups. Automatic cleanup is enabled by
@@ -135,6 +158,8 @@ fully downloaded before a generation job will run.
 | `POST` | `/api/downloads` | start a model download (`{ "repo": "..." }`) |
 | `GET` | `/api/downloads/stream` | SSE download progress |
 | `GET` | `/api/generate/diagnostics` | engine + package readiness |
+| `GET` / `PUT` | `/api/memory-policy` | inspect or save local pipeline memory mode |
+| `POST` | `/api/memory/release` | unload the local pipeline and clear accelerator caches |
 | `POST` | `/api/generate/txt2video` | start a text-to-video job (JSON) |
 | `POST` | `/api/generate/video2video` | start an image-to-video or video-to-video job (multipart) |
 | `GET` | `/api/generate/jobs` | list jobs |

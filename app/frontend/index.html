@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Studio KH</title>
-  <link rel="stylesheet" href="/assets/style.css?v=v090" />
+  <link rel="stylesheet" href="/assets/style.css?v=v0100" />
   <!-- Order matters: app.js defines the global studio() that Alpine's x-data
        calls, so it must load before alpine.min.js. prompts.js seeds samples. -->
   <script src="/assets/auth.js?v=fleet-1"></script>
   <script defer src="/assets/prompts.js?v=v1"></script>
-  <script defer src="/assets/app.js?v=v090"></script>
+  <script defer src="/assets/app.js?v=v0100"></script>
   <script defer src="/assets/alpine.min.js?v=v1"></script>
 </head>
 <body x-data="studio()" x-init="init()">
@@ -618,6 +618,22 @@
         <p>Manage model access and the local API from one place.</p>
       </header>
       <div class="settings-grid">
+      <div class="card settings-card auto-update-card memory-policy-card" x-show="memoryPolicy.loaded" x-cloak>
+        <div class="auto-update-head"><div><h3>Model memory</h3><p class="hint">Keep the most recent local MLX or Diffusers video pipeline warm, or return unified memory after Video Studio becomes idle.</p></div><span class="auto-update-state" :class="memoryPolicy.busy ? 'checking' : (memoryPolicy.loaded_pipeline ? 'available' : 'succeeded')" x-text="memoryPolicy.busy ? 'working' : (memoryPolicy.loaded_pipeline ? 'pipeline loaded' : 'memory clear')"></span></div>
+        <fieldset class="auto-update-mode-group" @change="markMemoryPolicyDirty()">
+          <legend>Performance mode</legend>
+          <div class="auto-update-mode-options memory-policy-options">
+            <label class="auto-update-mode-option" :class="{active:memoryPolicy.draft.mode==='performance'}"><input type="radio" name="memory-policy-mode" value="performance" x-model="memoryPolicy.draft.mode"><span><strong>Performance · default</strong><small>Keep the latest local pipeline warm for a faster repeat render.</small></span></label>
+            <label class="auto-update-mode-option" :class="{active:memoryPolicy.draft.mode==='balanced'}"><input type="radio" name="memory-policy-mode" value="balanced" x-model="memoryPolicy.draft.mode"><span><strong>Balanced</strong><small>Unload after 10 minutes without a local render.</small></span></label>
+            <label class="auto-update-mode-option" :class="{active:memoryPolicy.draft.mode==='memory_saver'}"><input type="radio" name="memory-policy-mode" value="memory_saver" x-model="memoryPolicy.draft.mode"><span><strong>Memory Saver</strong><small>Unload after 2 idle minutes.</small></span></label>
+            <label class="auto-update-mode-option" :class="{active:memoryPolicy.draft.mode==='immediate'}"><input type="radio" name="memory-policy-mode" value="immediate" x-model="memoryPolicy.draft.mode"><span><strong>Immediate</strong><small>Unload after every completed local render.</small></span></label>
+          </div>
+        </fieldset>
+        <div class="auto-update-actions"><button class="primary" @click="saveMemoryPolicy()" :disabled="memoryPolicy.busy || !memoryPolicy.dirty" x-text="memoryPolicy.busy ? 'Working…' : 'Save mode'"></button><span class="auto-update-unsaved" x-show="memoryPolicy.dirty">Unsaved changes</span><span class="auto-update-action-spacer"></span><button class="ghost" @click="releaseMemory()" :disabled="memoryPolicy.busy">Release Memory / Unload Model</button></div>
+        <p class="auto-update-message" x-show="memoryPolicy.message" :class="memoryPolicy.messageKind" x-text="memoryPolicy.message"></p>
+        <div class="auto-update-status-grid"><div><span>Current mode</span><strong x-text="memoryPolicy.mode.replace('_',' ')"></strong></div><div><span>Local pipeline</span><strong x-text="memoryPipelineLabel()"></strong></div><div><span>Next release</span><strong x-text="memoryPolicy.next_release_at ? memoryPolicyTime(memoryPolicy.next_release_at) : (memoryPolicy.mode==='performance' ? 'Manual only' : 'After next local render')"></strong></div><div><span>Last release</span><strong x-text="memoryPolicyTime(memoryPolicy.last_release_at)"></strong></div><div><span>Release count</span><strong x-text="memoryPolicy.release_count || 0"></strong></div><div><span>Activity Monitor</span><strong x-text="memoryPolicy.process_title || 'Video Studio Mac'"></strong></div></div>
+        <p class="hint">Cloud generations are not affected. Downloaded weights and output videos stay on disk; failed or cancelled local renders still release their pipeline for safety.</p>
+      </div>
       <div class="card settings-card auto-update-card" x-show="autoUpdate.loaded" x-cloak>
         <div class="auto-update-head"><div><h3>Automatic updates</h3><p class="hint">Optional, recoverable updates that wait for local and cloud video jobs and model downloads to finish.</p></div><span class="auto-update-state" :class="autoUpdate.state" x-text="autoUpdate.state"></span></div>
         <fieldset class="auto-update-mode-group" @change="markAutoUpdateDirty()">

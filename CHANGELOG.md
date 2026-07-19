@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.10.0] — 2026-07-20
+
+### Added — configurable local video memory management
+
+- Added four persistent pipeline-memory modes. Performance is the default and
+  keeps the most recent successful MLX or Diffusers pipeline warm for faster
+  repeat renders; Balanced unloads after 10 idle minutes, Memory Saver after
+  2, and Immediate after each completed local render.
+- Added a guarded **Release Memory / Unload Model** action and matching Studio
+  Hub-compatible `GET/PUT /api/memory-policy` plus
+  `POST /api/memory/release` endpoints.
+- Memory release clears the cached pipeline, Python garbage, PyTorch MPS, and
+  MLX/Metal allocator caches. Active or queued local renders block release;
+  cloud jobs are unaffected because they do not occupy local model memory.
+- The backend now requests the friendly Activity Monitor title
+  **Video Studio Mac** after Update and restart.
+
+### Safety and verification
+
+- Failed and cancelled local renders continue to release their pipeline
+  immediately in every mode. Downloaded models, source uploads, and rendered
+  videos are never deleted by memory cleanup.
+- Added default-mode, idle deadline, active-job guard, retained-success,
+  failed-render cleanup, API, UI-contract, and process-title coverage. All 70
+  tests pass with backend compilation, frontend/launcher syntax, and whitespace
+  checks. The live service was not restarted.
+- An isolated desktop and compact preview had no horizontal overflow, retained
+  unsaved choices across polling, and uses a new static-asset cache key so the
+  controls appear immediately after Update.
+
 ## [0.9.0] — 2026-07-19
 
 ### Added — native MLX video for 16 GB and 24 GB Macs

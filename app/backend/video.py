@@ -322,30 +322,41 @@ class _Cancelled(Exception):
 
 # ───────────── pipeline cache (1 entry) ─────────────
 # Loading a multi-GB video pipeline is the slowest part of a job. This single
-# slot prevents two models being resident during a switch; the manager releases
-# it at every terminal job state so success, cancellation, and failure return
-# unified memory to the system.
+# slot prevents two models being resident during a switch. Performance mode
+# keeps the most recent pipeline warm; the memory policy can release it later.
 _PIPE_CACHE: dict = {"key": None, "pipe": None}
 
 
-def _free_cached_pipeline() -> None:
-    if _PIPE_CACHE.get("pipe") is not None:
-        _PIPE_CACHE["pipe"] = None
-        _PIPE_CACHE["key"] = None
-        gc.collect()
-        try:
-            import torch
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-            elif torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
-        try:
-            import mlx.core as mx
-            mx.clear_cache()
-        except Exception:
-            pass
+def _free_cached_pipeline() -> dict:
+    key = _PIPE_CACHE.get("key")
+    had_pipeline = _PIPE_CACHE.get("pipe") is not None
+    _PIPE_CACHE["pipe"] = None
+    _PIPE_CACHE["key"] = None
+    actions = []
+    if had_pipeline:
+        actions.append("local video pipeline unloaded")
+    gc.collect()
+    actions.append("Python garbage collection completed")
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+            actions.append("PyTorch MPS cache cleared")
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            actions.append("PyTorch CUDA cache cleared")
+    except Exception:
+        pass
+    try:
+        import mlx.core as mx
+        synchronize = getattr(mx, "synchronize", None)
+        if callable(synchronize):
+            synchronize()
+        mx.clear_cache()
+        actions.append("MLX/Metal cache cleared")
+    except Exception:
+        pass
+    return {"released": had_pipeline, "pipeline": list(key) if key else None, "actions": actions}
 
 
 def _torch_dtype(name: str):
@@ -456,6 +467,7 @@ class VideoManager:
         self._queue_changed = threading.Condition(self._lock)
         self._jobs: dict[str, VideoJob] = {}
         self._local_queue: list[str] = []
+        self._last_local_activity_at: Optional[float] = None
         self._load_history()
 
     # ----- public API -----
@@ -486,6 +498,36 @@ class VideoManager:
 
     def get(self, job_id: str) -> Optional[VideoJob]:
         return self._jobs.get(job_id)
+
+    def has_active_local_jobs(self) -> bool:
+        return any(
+            not job.params.get("cloud") and job.state in {"queued", "running", "cancelling"}
+            for job in self.list_jobs()
+        )
+
+    def has_loaded_pipeline(self) -> bool:
+        return _PIPE_CACHE.get("pipe") is not None
+
+    def loaded_pipeline_key(self):
+        return _PIPE_CACHE.get("key") if self.has_loaded_pipeline() else None
+
+    def last_activity_at(self) -> Optional[float]:
+        return self._last_local_activity_at
+
+    def idle_seconds(self, now: Optional[float] = None) -> Optional[float]:
+        if not self.has_loaded_pipeline() or self._last_local_activity_at is None:
+            return None
+        return max(0.0, (time.time() if now is None else now) - self._last_local_activity_at)
+
+    def release_memory(self, reason: str = "manual") -> dict:
+        if self.has_active_local_jobs():
+            raise RuntimeError("a local video render is queued or running")
+        if not _GEN_LOCK.acquire(blocking=False):
+            raise RuntimeError("the local video engine is busy")
+        try:
+            return _free_cached_pipeline()
+        finally:
+            _GEN_LOCK.release()
 
     def cancel(self, job_id: str) -> bool:
         """Signal cancellation. A queued job flips to 'cancelled' immediately so
@@ -823,6 +865,7 @@ class VideoManager:
             job.state = "running"
             job.stage = "preparing"
             job.started_at = time.time()
+            self._last_local_activity_at = job.started_at
             job.progress = 0.05          # move the bar off zero the moment work starts
             print(f"[vid] starting {job.mode} {job.job_id}: {job.params}", flush=True)
 
@@ -866,7 +909,9 @@ class VideoManager:
                     pass
             finally:
                 job.finished_at = time.time()
-                _free_cached_pipeline()
+                self._last_local_activity_at = job.finished_at
+                if job.state != "done":
+                    _free_cached_pipeline()
                 self._finish_queue_slot(job)
                 self._persist()
 

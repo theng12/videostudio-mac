@@ -86,6 +86,14 @@ function studio() {
     pruneArmed: null,        // prune mode ("keep50" | "old30") armed for a two-click confirm
     outputStats: { bytes: 0, count: 0, loaded: false },
     storagePolicy: { enabled: true, retention_days: 3, max_gb: 80, used_bytes: 0, over_limit: false, loaded: false, busy: false, message: "" },
+    memoryPolicy: {
+      mode:"performance", default_mode:"performance", idle_seconds:null,
+      loaded_pipeline:null, pipeline_idle_seconds:null, next_release_at:null,
+      last_release_at:null, last_release_reason:null, release_count:0,
+      process_title:"Video Studio Mac", process_title_applied:false,
+      loaded:false, busy:false, message:"", messageKind:"info",
+      draft:{mode:"performance"}, dirty:false,
+    },
     _lastDoneCount: 0,
 
     // ──────── Generate computed ────────
@@ -195,12 +203,14 @@ function studio() {
       this.openGenerateStream();
       this.refreshOutputStats();
       this.refreshStoragePolicy();
+      await this.refreshMemoryPolicy(true, true);
       this.loadProviders().then(() => this.loadSpend());
       setInterval(() => this.refreshHealth(), 8000);
       setInterval(() => this.loadDiagnostics(), 15000);
       setInterval(() => { if (this.tab === "settings") this.loadSpend(); }, 15000);
       setInterval(() => {
         if (this.tab === "settings" || ["checking","updating","restarting","deferred"].includes(this.autoUpdate.state)) this.loadAutoUpdate(true);
+        if (this.tab === "settings") this.refreshMemoryPolicy(true);
       }, 5000);
     },
 
@@ -1019,6 +1029,37 @@ function studio() {
         this.storagePolicy.busy = false; this.storagePolicy.message = String(e);
         this.pushToast("Couldn't clean video outputs: " + e, "error");
       }
+    },
+    async refreshMemoryPolicy(silent=false, forceDraft=false) {
+      try {
+        const r=await fetch("/api/memory-policy",{cache:"no-store"});
+        const d=await r.json(); if(!r.ok) throw new Error(d.detail||`HTTP ${r.status}`);
+        const saved=d.mode;
+        Object.assign(this.memoryPolicy,d,{loaded:true});
+        if(forceDraft || !this.memoryPolicy.dirty){this.memoryPolicy.draft={mode:saved};this.memoryPolicy.dirty=false;}
+      } catch(e){if(!silent){this.memoryPolicy.message=String(e.message||e);this.memoryPolicy.messageKind="error";}}
+    },
+    markMemoryPolicyDirty(){this.memoryPolicy.dirty=true;this.memoryPolicy.message="";this.memoryPolicy.messageKind="info";},
+    memoryPolicyTime(value){if(!value)return "Not scheduled";const n=Number(value);const d=new Date(n<1e12?n*1000:n);return Number.isNaN(d.getTime())?"Not scheduled":d.toLocaleString();},
+    memoryPipelineLabel(){const p=this.memoryPolicy.loaded_pipeline;return Array.isArray(p)&&p.length?String(p[0]).split("/").pop()+" · "+p[1]:"None loaded";},
+    async saveMemoryPolicy(){
+      this.memoryPolicy.busy=true;this.memoryPolicy.message="Saving memory mode…";this.memoryPolicy.messageKind="info";
+      try{
+        const r=await fetch("/api/memory-policy",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(this.memoryPolicy.draft)});
+        const d=await r.json();if(!r.ok)throw new Error(d.detail||`HTTP ${r.status}`);
+        Object.assign(this.memoryPolicy,d,{loaded:true,draft:{mode:d.mode},dirty:false,message:"Memory mode saved.",messageKind:"success"});
+      }catch(e){this.memoryPolicy.message=String(e.message||e);this.memoryPolicy.messageKind="error";}
+      finally{this.memoryPolicy.busy=false;}
+    },
+    async releaseMemory(){
+      this.memoryPolicy.busy=true;this.memoryPolicy.message="Releasing local video memory…";this.memoryPolicy.messageKind="info";
+      try{
+        const r=await fetch("/api/memory/release",{method:"POST"});
+        const d=await r.json();if(!r.ok)throw new Error(d.detail||`HTTP ${r.status}`);
+        Object.assign(this.memoryPolicy,d,{loaded:true,message:d.last_release_details?.released?"Local video pipeline unloaded and accelerator caches cleared.":"Allocator caches cleared; no local pipeline was loaded.",messageKind:"success"});
+        this.pushToast(this.memoryPolicy.message,"success");
+      }catch(e){this.memoryPolicy.message=String(e.message||e);this.memoryPolicy.messageKind="error";this.pushToast(this.memoryPolicy.message,"error");}
+      finally{this.memoryPolicy.busy=false;}
     },
     /** mode: "keep50" keeps the newest 50; "old30" deletes clips older than 30 days. */
     async pruneOutputs(mode) {
