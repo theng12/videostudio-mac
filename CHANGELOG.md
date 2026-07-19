@@ -21,16 +21,16 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 - Kept the action hidden only while Install, Update, Reset, or Generation setup
   already owns the environment, preventing concurrent package changes.
 - Added a persistent **What's New** action in every launcher state. It opens the
-  complete changelog even when the web server is stopped or maintenance is in
-  progress.
+  complete changelog in Pinokio's built-in viewer, newest release first, even
+  when the web server is stopped or maintenance is in progress.
 
 ### Verification
 
 - Exercised the dynamic menu with mocked stopped, starting, running, service,
   first-install, and maintenance states; verified the correct Install/Reinstall
   label and persistent release-notes action. Also verified launcher syntax, the
-  documented `fs.cat` release-notes flow, the full automated test suite, and the
-  unchanged URL-capture contract in `start.js`.
+  real Pinokio changelog viewer, the full automated test suite, and the unchanged
+  URL-capture contract in `start.js`.
 
 ---
 

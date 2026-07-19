@@ -26,7 +26,10 @@ module.exports = {
     const whatsNewItem = {
       icon: "fa-solid fa-bullhorn",
       text: "What's New",
-      href: "whats_new.js"
+      // Pinokio's built-in source viewer opens at the top of the file, so the
+      // newest release is visible immediately while the full history remains
+      // available. This route does not depend on the Video Studio server.
+      href: "/_api/videostudio-mac/CHANGELOG.md"
     }
     const running = {
       install: info.running("install.js"),

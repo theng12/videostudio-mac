@@ -56,8 +56,8 @@ install, update, or reset, it is temporarily hidden to prevent concurrent
 changes to the same environment.
 
 **What's New** is always available in the sidebar, including while installation
-or updating is in progress. It opens the full release notes with the latest
-version first.
+or updating is in progress. It opens Pinokio's release-notes viewer at the
+latest version while keeping the full history available below it.
 
 The server binds `0.0.0.0:47872` so other devices on your LAN / Tailscale can
 reach the API directly. On this machine it's also at `http://localhost:47872`.
