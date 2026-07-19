@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Video Studio KH</title>
-  <link rel="stylesheet" href="/assets/style.css?v=v061" />
+  <link rel="stylesheet" href="/assets/style.css?v=v090" />
   <!-- Order matters: app.js defines the global studio() that Alpine's x-data
        calls, so it must load before alpine.min.js. prompts.js seeds samples. -->
   <script src="/assets/auth.js?v=fleet-1"></script>
   <script defer src="/assets/prompts.js?v=v1"></script>
-  <script defer src="/assets/app.js?v=v061"></script>
+  <script defer src="/assets/app.js?v=v090"></script>
   <script defer src="/assets/alpine.min.js?v=v1"></script>
 </head>
 <body x-data="studio()" x-init="init()">
@@ -18,7 +18,7 @@
     <div class="brand">
       <img class="brand-mark" src="/assets/icon.png?v=v1" alt="Video Studio" />
       <span class="brand-name">Video Studio</span>
-      <span class="brand-tag">Apple Silicon · Diffusers</span>
+      <span class="brand-tag">Apple Silicon · MLX + Diffusers</span>
     </div>
     <nav class="tabs">
       <button :class="{active: tab==='generate'}" @click="tab='generate'">Generate</button>
@@ -73,14 +73,14 @@
       <!-- engine-not-installed banner (local models only; cloud still works) -->
       <div class="banner warn" x-show="!gen.available && !anyCloudUsable">
         <strong>Video engine not installed.</strong>
-        Click <em>Install Generation</em> in the Pinokio sidebar to install PyTorch + Diffusers,
+        Click <em>Install Generation</em> in the Pinokio sidebar to install MLX + PyTorch/Diffusers,
         then reload. You can still browse Models, start downloads, or link a cloud provider in Settings.
       </div>
 
       <!-- no usable models -->
       <div class="banner info" x-show="selectableGenerationModels.length === 0">
         No models ready yet. <a href="#" @click.prevent="tab='models'">Download</a> a local model
-        (start with <strong>CogVideoX-2B</strong> for the lowest local memory tier), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
+        (start with <strong>Lance 3B MLX</strong> on a 16 or 24 GB Mac), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
       </div>
 
       <div class="gen-grid">
@@ -164,17 +164,20 @@
             <button class="link-btn" type="button" @click="randomPrompt()">🎲 random sample</button>
           </label>
 
-          <label class="field">
+          <label class="field" x-show="selectedModel?.engine !== 'mlx-lance'">
             <span>Negative prompt <small>(optional)</small></span>
             <textarea x-model="gen.negativePrompt" rows="2"
                       placeholder="blurry, low quality, distorted"></textarea>
           </label>
+          <p class="hint" x-show="selectedModel?.engine === 'mlx-lance'" x-cloak>
+            Lance MLX uses its validated unconditional-guidance path and does not accept a separate negative prompt.
+          </p>
 
           <details class="advanced-controls" x-show="!selectedModel?.is_cloud">
             <summary>Advanced local controls</summary>
           <div class="grid2">
             <label class="field"><span>Frames</span>
-              <input type="number" x-model.number="gen.frames" min="9" step="8" /></label>
+              <input type="number" x-model.number="gen.frames" min="9" :step="modelFrameBase(selectedModel)" /></label>
             <label class="field"><span>FPS</span>
               <input type="number" x-model.number="gen.fps" min="1" max="60" /></label>
             <label class="field"><span>Steps</span>
@@ -338,10 +341,10 @@
       </div>
 
       <!-- diagnostics -->
-      <details class="diag card" x-show="diag.packages.length">
+      <details class="diag card" x-show="(diag.packages || []).length">
         <summary>Engine diagnostics <small x-text="`(${diag.ready_count}/${diag.total_engines} engines ready)`"></small></summary>
         <ul class="diag-list">
-          <template x-for="p in diag.packages" :key="p.package">
+          <template x-for="p in (diag.packages || [])" :key="p.package">
             <li :class="p.installed ? 'ok' : 'missing'">
               <span x-text="p.installed ? '✓' : '✗'"></span>
               <strong x-text="p.package"></strong>
@@ -460,7 +463,7 @@
                 <span class="family-panel-copy">
                   <span class="family-title-line">
                     <strong x-text="family.label"></strong>
-                    <span class="family-recommended" x-show="family.id==='cogvideox'">Lowest-memory tier</span>
+                    <span class="family-recommended" x-show="family.id==='lance-mlx'">16 / 24 GB pick</span>
                     <span class="family-cached" x-show="family.cachedCount" x-text="family.cachedCount + ' downloaded'"></span>
                     <span class="family-provider" x-show="family.is_cloud" x-text="providerName(family.provider)"></span>
                     <span class="family-key-needed" x-show="family.is_cloud && !family.models.some((m) => m.key_set)">API key required</span>
@@ -473,6 +476,7 @@
                     <span x-text="familyDurationSummary(family)"></span>
                     <span x-show="!family.is_cloud" x-text="familySizeSummary(family) + ' download'"></span>
                     <span x-show="!family.is_cloud" x-text="familyRamSummary(family) + ' RAM'"></span>
+                    <span x-show="!family.is_cloud" x-text="family.models.some((m) => m.engine?.startsWith('mlx')) ? 'Native MLX' : 'PyTorch · MPS'"></span>
                     <span x-show="family.is_cloud" x-text="family.models.some((m) => m.key_set) ? 'API key linked' : 'Unavailable until linked'"></span>
                   </span>
                 </span>
@@ -493,6 +497,7 @@
                         <div class="variant-title-line">
                           <h3 x-text="m.variant_label || m.label"></h3>
                           <span class="variant-source local" x-show="!m.is_cloud">Local</span>
+                          <span class="variant-source mlx" x-show="m.engine?.startsWith('mlx')">MLX</span>
                           <span class="variant-role" x-text="m.role" x-show="m.role && !m.is_cloud"></span>
                           <span class="variant-source cloud" x-show="m.is_cloud" x-text="providerName(m.provider)"></span>
                           <span class="variant-role" x-show="m.status==='new'">New</span>

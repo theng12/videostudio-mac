@@ -5,7 +5,7 @@ module.exports = {
   icon: "icon.png",
   menu: async (kernel, info) => {
     const installed = info.exists("conda_env")
-    // Generation engine = the heavy PyTorch/Diffusers stack from install_generation.js.
+    // Generation engine = the MLX + PyTorch/Diffusers stack from install_generation.js.
     // `diffusers` in site-packages is the marker that the video engine is installed.
     const generationInstalled = info.exists("conda_env/lib/python3.12/site-packages/diffusers")
     // Always-on launchd service installed? (marker dropped by install_service.sh)

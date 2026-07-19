@@ -5,10 +5,10 @@ Each entry describes a Hugging Face repo plus metadata that helps the UI:
 download size, gating status, hardware floor, supported modes, and a long-form
 explainer. Models with the same `family` share an explainer in the UI.
 
-Engine: PyTorch (MPS) + 🤗 Diffusers. Unlike Image Studio (MLX/mflux), every
-model here runs through a Diffusers pipeline — see `video.py` for the per-family
-dispatch. Each entry carries `video_defaults` (frames/fps/steps/guidance/size +
-torch dtype) so the Generate tab can prefill sensible per-model settings.
+Engines: native MLX for Apple-optimized families, plus PyTorch (MPS) +
+🤗 Diffusers for the existing families. See `video.py` for per-engine dispatch.
+Each entry carries `video_defaults` (frames/fps/steps/guidance/size + dtype) so
+the Generate tab can prefill sensible per-model settings.
 
 `capabilities` is drawn from:
   - "txt2video"   : generate a clip from a text prompt
@@ -32,6 +32,24 @@ class Family:
 
 
 FAMILIES: dict[str, Family] = {
+    "lance-mlx": Family(
+        id="lance-mlx",
+        label="Lance MLX",
+        monogram="LMX",
+        accent="#69d3ff",
+        summary=(
+            "ByteDance's Lance video specialist, converted for native MLX. Its "
+            "phased relay loader has a measured 8–13 GB working set on smaller "
+            "Macs, making it the first catalog model intended for 16 GB and "
+            "24 GB Apple Silicon."
+        ),
+        how_to_use=(
+            "Start at 512×512, 17 frames, 30 steps, and 12 fps. MLX selects "
+            "relay mode below roughly 18 GiB (16 GB Macs) and parallel mode on "
+            "24 GB+ Macs. Keep clips at 25 frames or fewer: larger latent "
+            "grids are not yet quality-validated upstream."
+        ),
+    ),
     "ltx-video": Family(
         id="ltx-video",
         label="LTX-Video",
@@ -96,7 +114,7 @@ FAMILIES: dict[str, Family] = {
             "guidance 6.0, 8 fps, 720×480. The 2B variant runs in float16 and is "
             "the lightest; 5B runs in bfloat16 for better quality. For "
             "video-to-video, upload a clip and describe the target style. The 2B "
-            "checkpoint is the lowest-memory local starting point in this catalog."
+            "checkpoint remains the lightest Diffusers starting point in this catalog."
         ),
     ),
 }
@@ -142,19 +160,61 @@ class ModelEntry:
     use_cases: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     # Per-model UI/engine defaults (frames/fps/steps/guidance/size + dtype).
     video_defaults: dict = field(default_factory=dict)
-    # Kept for serialize compatibility with the shared Models tab. Video models
-    # are not MLX-quantized, so these stay at their neutral defaults.
+    # Kept for serialize compatibility with the shared Models tab. Diffusers
+    # rows use the neutral default; native MLX rows can surface their precision.
     quantization: Optional[str] = None
     aliases: tuple[str, ...] = field(default_factory=tuple)
+    engine: str = "diffusers"
 
     @property
     def is_apple_optimized(self) -> bool:
-        # Video models run via PyTorch/MPS, not MLX — never "apple optimized"
-        # in the MLX sense the Models-tab filter means.
-        return False
+        return self.engine.startswith("mlx")
 
 
 CATALOG: tuple[ModelEntry, ...] = (
+    # ──────────── Lance MLX ────────────
+    ModelEntry(
+        repo="mlx-community/Lance-3B-Video-bf16",
+        label="Lance 3B Video (MLX, 16/24 GB)",
+        family="lance-mlx",
+        variant_label="3B Video bf16",
+        role="16 GB MLX starter",
+        size_gb=15.6,
+        gated=False,
+        min_unified_memory_gb=16,
+        recommended_unified_memory_gb=24,
+        recommended_hardware=(
+            "M-series 16 GB in automatic relay mode; 24 GB+ uses parallel mode "
+            "with all phases resident during the render. Close other heavy apps on 16 GB."
+        ),
+        expected_speed=(
+            "Low-memory preview tier; measured upstream at about 60 seconds for "
+            "512² × 16 frames on an M5 Max (base M4 will be slower)"
+        ),
+        max_frames=25,
+        max_duration_s=2.1,
+        resolutions=("256×256", "512×512"),
+        aspect_ratios=("1:1",),
+        license_name="Apache-2.0",
+        license_url="https://huggingface.co/mlx-community/Lance-3B-Video-bf16/blob/main/NOTICE",
+        commercial_use="Permitted under Apache-2.0; retain the bundled attribution notices.",
+        capabilities=("txt2video",),
+        best_for=(
+            "Short local text-to-video previews on 16 GB and 24 GB Macs. The "
+            "upstream port is alpha, but its 256²–768² / ≤25-frame quality "
+            "and low-memory modes are validated end to end."
+        ),
+        use_cases=(
+            ("good", "Actually local text-to-video on a 16 GB Apple Silicon Mac"),
+            ("good", "Fast square motion and composition previews before a cloud final"),
+            ("weak", "Native output is short; this release wires text-to-video only"),
+            ("avoid", "Long clips above 25 frames; upstream reports quality failures at larger latent grids"),
+        ),
+        video_defaults=_vd(frames=17, fps=12, steps=30, guidance=4.0, width=512, height=512, dtype="bfloat16"),
+        quantization="bf16",
+        engine="mlx-lance",
+    ),
+
     # ──────────── LTX-Video ────────────
     ModelEntry(
         repo="Lightricks/LTX-Video-0.9.8-13B-distilled",
@@ -333,8 +393,8 @@ CATALOG: tuple[ModelEntry, ...] = (
         gated=False,
         min_unified_memory_gb=24,
         recommended_unified_memory_gb=32,
-        recommended_hardware="M-series 24 GB minimum, 32 GB recommended. The lowest-memory local tier.",
-        expected_speed="Slow, but the fastest low-memory preview tier here",
+        recommended_hardware="M-series 24 GB minimum, 32 GB recommended. The lightest Diffusers tier.",
+        expected_speed="Slow, but the fastest Diffusers preview tier here",
         max_frames=49,
         max_duration_s=6.1,
         resolutions=("720×480",),
@@ -434,6 +494,7 @@ def serialize_model(m: ModelEntry) -> dict:
         "size_gb": m.size_gb,
         "gated": m.gated,
         "quantization": m.quantization,
+        "engine": m.engine,
         "min_unified_memory_gb": m.min_unified_memory_gb,
         "recommended_unified_memory_gb": m.recommended_unified_memory_gb,
         "recommended_hardware": m.recommended_hardware,

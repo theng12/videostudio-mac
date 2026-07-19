@@ -738,10 +738,14 @@ function studio() {
       return `${this.formatDuration(this.modelDurationSeconds(model))} · ${d.frames || "—"} frames · ${d.fps || "—"} fps`;
     },
     modelRuntimeLabel(model) {
-      return model.is_cloud ? `${this.providerName(model.provider)} · Cloud API` : "Local · PyTorch · MPS";
+      if (model.is_cloud) return `${this.providerName(model.provider)} · Cloud API`;
+      return model.engine?.startsWith("mlx")
+        ? "Local · Native MLX · Apple Silicon"
+        : "Local · PyTorch · MPS";
     },
     modelRowClass(model) {
       return [model.cache?.state || "absent", model.is_cloud ? "cloud" : "local",
+        model.engine?.startsWith("mlx") ? "mlx" : "",
         model.is_cloud && !model.key_set ? "cloud-unlinked" : "",
         !model.is_cloud && this.isModelReady(model.repo) ? "ready" : ""].filter(Boolean).join(" ");
     },
@@ -764,6 +768,9 @@ function studio() {
 
     // ──────── Generate ────────
     modeLabel(cap) { return { txt2video: "Text → Video", img2video: "Image → Video", video2video: "Video → Video" }[cap] || cap; },
+    modelFrameBase(model) {
+      return { "lance-mlx": 4, "ltx-video": 8, "wan22": 4, "hunyuanvideo": 4, "cogvideox": 8 }[model?.family] || 8;
+    },
     jobStageLabel(job) {
       if (job.state === "queued" && job.queue_position) return `queued #${job.queue_position}`;
       return ({ preparing: "preparing", loading: "loading model", generating: "generating frames",
@@ -802,7 +809,7 @@ function studio() {
           : "This model uses a fixed per-video price.";
         return `Estimated provider cost: $${this.estimatedCloudCost.toFixed(4)}. ${reconciliation}`;
       }
-      const base = { "ltx-video": 8, "wan22": 4, "hunyuanvideo": 4, "cogvideox": 8 }[m.family] || 8;
+      const base = this.modelFrameBase(m);
       return `Frames are rounded to ${base}·n+1 for this model. Bigger frames/steps = much longer generation.`;
     },
     get canSubmit() {

@@ -1,6 +1,6 @@
-// Heavy install: adds the PyTorch (MPS) + Diffusers video engine and its
-// supporting deps to the existing conda_env. Required for any /api/generate/*
-// endpoint to work. Safe to run more than once.
+// Heavy install: adds both native MLX and PyTorch (MPS) + Diffusers video
+// engines and their supporting deps to the existing conda_env. Required for
+// local /api/generate/* endpoints. Safe to run more than once.
 //
 // LOCKED STACK: the generated lock now contains both the base server and every
 // generation dependency. The verification step checks exact imports, pipeline
@@ -12,7 +12,7 @@
 // notification unconditionally — telling users it worked even on total failure.
 //
 // Restart flow: if the server is running we stop it first so its Python process
-// exits and re-imports the freshly installed torch/diffusers (a long-lived
+// exits and re-imports the freshly installed MLX + torch/diffusers stack (a long-lived
 // uvicorn worker keeps the old sys.modules cache and never sees the new packages
 // — the classic "ModuleNotFoundError even though pip succeeded"). We then restart
 // whichever server this machine actually runs: the launchd service if installed,
@@ -50,7 +50,7 @@ module.exports = {
           "path": "{{path.resolve(cwd, 'conda_env')}}"
         },
         message: [
-          "python -c \"import torch, diffusers, transformers; names=('LTXConditionPipeline','WanPipeline','WanImageToVideoPipeline','HunyuanVideoPipeline','HunyuanVideoImageToVideoPipeline','CogVideoXPipeline','CogVideoXImageToVideoPipeline','CogVideoXVideoToVideoPipeline'); missing=[n for n in names if not hasattr(diffusers,n)]; assert not missing, missing; print('GEN_VERIFY_OK', torch.__version__, diffusers.__version__, transformers.__version__)\" 2>&1",
+          "python -c \"from importlib.metadata import version as pkg_version; import torch, diffusers, transformers, mlx, lance_mlx; from lance_mlx.pipeline.t2v import TextToVideoPipeline; names=('LTXConditionPipeline','WanPipeline','WanImageToVideoPipeline','HunyuanVideoPipeline','HunyuanVideoImageToVideoPipeline','CogVideoXPipeline','CogVideoXImageToVideoPipeline','CogVideoXVideoToVideoPipeline'); missing=[n for n in names if not hasattr(diffusers,n)]; assert not missing, missing; print('GEN_VERIFY_OK', torch.__version__, diffusers.__version__, transformers.__version__, pkg_version('mlx'), TextToVideoPipeline.__name__)\" 2>&1",
           "python -m pip check"
         ],
         on: [{ event: "/(ModuleNotFoundError|ImportError|Traceback)/", break: true }]
@@ -72,7 +72,7 @@ module.exports = {
     {
       method: "notify",
       params: {
-        html: "Generation engine installed & verified. Server restarted — Generate is ready."
+        html: "MLX + Diffusers generation engines installed & verified. Server restarted — Generate is ready."
       }
     }
   ]

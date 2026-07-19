@@ -10,6 +10,39 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.9.0] — 2026-07-19
+
+### Added — native MLX video for 16 GB and 24 GB Macs
+
+- Added `mlx-community/Lance-3B-Video-bf16` as a native MLX text-to-video
+  family. The one model automatically selects phased relay loading below the
+  upstream memory threshold and parallel loading on 24 GB+ Macs.
+- Added conservative 512×512, 17-frame defaults plus backend guards for the
+  validated 25-frame / 16,128-latent-token quality envelope. Macs below 24 GB
+  cannot accidentally request a resolution above 512×512.
+- Added MLX engine/provider labels throughout the local catalog and Generate
+  controls, a four-frame architecture step, and model-specific guidance that
+  hides the unsupported negative-prompt control.
+
+### Changed — reproducible generation installation
+
+- Pinned `lance-mlx` to the audited upstream commit together with its matching
+  `mlx-video` and `mlx-vlm` revisions, and extended Install Generation's import
+  verification and diagnostics to cover the native MLX path.
+- Pinned Python 3.12-compatible NumPy/Numba versions after reproducing a
+  transitive resolver fallback to an uninstallable Python-3.9-only Numba.
+- Existing Diffusers and cloud families remain available and unchanged.
+
+### Verification
+
+- All 65 tests pass, including MLX catalog, dispatch, capability, and 16 GB
+  safety regressions. Python compilation, JavaScript/launcher syntax, lockfile
+  resolution, dry-run installation, catalog API checks, and UI rendering pass.
+  The 15.6 GB model itself is intentionally not downloaded during an update.
+
+> **After updating:** run **Reinstall Generation** once to install the new MLX
+> runtime, then download **Lance 3B Video MLX** from Models.
+
 ## [0.8.4] — 2026-07-19
 
 ### Added — automatic local output protection

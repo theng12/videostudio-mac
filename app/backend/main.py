@@ -11,7 +11,7 @@ Serves:
 - `/api/imports/scan`                → list candidates from VIDEOSTUDIO_EXTRA_MODEL_DIRS
 - `/api/imports`                     → symlink/move an existing folder into HF_HOME
 - `/api/reveal`                      → open a path in the OS file manager (macOS Finder)
-- `/api/generate/availability`       → is the torch/diffusers engine installed?
+- `/api/generate/availability`       → is a local MLX/Diffusers engine installed?
 - `/api/generate/diagnostics`        → per-package + per-engine readiness checklist
 - `/api/generate/txt2video`          → start a text-to-video generation
 - `/api/generate/video2video`        → start an image-to-video or video-to-video generation
@@ -715,7 +715,7 @@ def generation_diagnostics() -> dict:
 
 
 def _require_engine_and_cache(repo: str) -> catalog.ModelEntry:
-    """Shared guard for every generation route: the torch/diffusers engine must
+    """Shared guard for every generation route: the selected local engine must
     be installed and the model fully downloaded."""
     if not gen_manager.is_available():
         raise HTTPException(

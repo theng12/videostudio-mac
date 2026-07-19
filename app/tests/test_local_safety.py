@@ -19,6 +19,79 @@ def test_catalog_uses_current_loader_compatible_ltx_and_canonical_cog_ids():
     assert catalog.get_model("THUDM/CogVideoX-2b").repo == "zai-org/CogVideoX-2b"
 
 
+def test_catalog_has_a_native_mlx_model_for_16_and_24_gb_macs():
+    from backend import catalog
+
+    lance = catalog.get_model("mlx-community/Lance-3B-Video-bf16")
+    assert lance is not None
+    assert lance.family == "lance-mlx"
+    assert lance.engine == "mlx-lance"
+    assert lance.is_apple_optimized is True
+    assert lance.min_unified_memory_gb == 16
+    assert lance.recommended_unified_memory_gb == 24
+    assert lance.capabilities == ("txt2video",)
+    assert lance.max_frames == 25
+    assert lance.video_defaults["width"] == 512
+    assert lance.video_defaults["height"] == 512
+
+
+def test_lance_pipeline_readiness_is_scoped_to_text_to_video(monkeypatch):
+    from backend import catalog, video
+
+    lance = catalog.get_model("mlx-community/Lance-3B-Video-bf16")
+    monkeypatch.setattr(video, "LANCE_AVAILABLE", True)
+    assert video.pipeline_available("lance-mlx", "txt2video") is True
+    assert video.pipeline_available("lance-mlx", "img2video") is False
+    assert video.model_pipeline_available(lance, "txt2video") is True
+    assert video.model_pipeline_available(lance, "img2video") is False
+
+
+def test_generate_dispatches_lance_without_importing_diffusers(monkeypatch, tmp_path):
+    from backend import video
+
+    manager = video.VideoManager()
+    called = {}
+
+    def fake_lance(job, model, output_path, **kwargs):
+        called.update({"repo": model.repo, "output": output_path, **kwargs})
+
+    monkeypatch.setattr(manager, "_generate_lance", fake_lance)
+    job = video.VideoJob("mlx", "txt2video", {
+        "repo": "mlx-community/Lance-3B-Video-bf16",
+        "prompt": "A paper kite over the sea",
+        "frames": 17,
+        "fps": 12,
+        "steps": 30,
+        "guidance": 4.0,
+        "width": 512,
+        "height": 512,
+        "seed": 7,
+    })
+    target = tmp_path / "lance.mp4"
+    manager._generate(job, target)
+
+    assert called["repo"] == "mlx-community/Lance-3B-Video-bf16"
+    assert called["output"] == target
+    assert called["frames"] == 17
+    assert job.resolved_seed == 7
+
+
+def test_lance_rejects_oversized_render_before_loading_on_16_gb(monkeypatch, tmp_path):
+    from backend import catalog, system_info, video
+
+    manager = video.VideoManager()
+    lance = catalog.get_model("mlx-community/Lance-3B-Video-bf16")
+    job = video.VideoJob("mlx-limit", "txt2video", {"prompt": "x"})
+    monkeypatch.setattr(system_info, "detect_memory_gb", lambda: 16)
+    monkeypatch.setattr(video, "_load_lance_pipeline", lambda _model: pytest.fail("must not load"))
+
+    with pytest.raises(ValueError, match="limited to 512×512"):
+        manager._generate_lance(
+            job, lance, tmp_path / "oversized.mp4", frames=17, fps=12,
+            steps=30, guidance=4.0, width=768, height=768, seed=7,
+        )
+
+
 def test_renamed_repo_can_reuse_legacy_cache(monkeypatch, tmp_path):
     from backend import cache
 

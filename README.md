@@ -1,16 +1,19 @@
 # Video Studio KH
 
 Local **text-to-video** and **video-to-video** generation for Apple Silicon,
-powered by PyTorch (MPS) + 🤗 Diffusers. A 1-click Pinokio launcher with a model
-catalog, download manager, and a generation UI with an in-browser video player.
+powered by native MLX plus PyTorch (MPS) + 🤗 Diffusers. A 1-click Pinokio
+launcher with a model catalog, download manager, and a generation UI with an
+in-browser video player.
 
 Part of the **KH studio suite** (Chat / Image / Music / Voice / **Video**) — each
 a standalone single-modality launcher.
 
 > **Heads-up on performance.** Local video generation is heavy and slow on
 > Apple Silicon, especially for the larger models (Wan 2.2 A14B, HunyuanVideo).
-> Start with **CogVideoX-2B** (the lowest-memory local tier) to confirm your setup, and reserve the big
-> models for a high-memory Mac (e.g. an M3 Ultra Mac Studio).
+> On a 16 GB or 24 GB Mac, start with **Lance 3B Video MLX** at its 512×512,
+> 17-frame default. It automatically uses low-memory relay mode on 16 GB and a
+> parallel loading on 24 GB+. Reserve the larger Diffusers models for
+> a high-memory Mac (e.g. an M3 Ultra Mac Studio).
 
 ---
 
@@ -31,6 +34,7 @@ a standalone single-modality launcher.
 
 | Family | Models | Modes |
 |---|---|---|
+| **Lance MLX** | `mlx-community/Lance-3B-Video-bf16` | **t2v** |
 | **LTX-Video** | `Lightricks/LTX-Video-0.9.8-13B-distilled` | t2v, i2v |
 | **Wan 2.2** | `Wan-AI/Wan2.2-TI2V-5B-Diffusers`, `…T2V-A14B…`, `…I2V-A14B…` | t2v, i2v |
 | **HunyuanVideo** | `hunyuanvideo-community/HunyuanVideo`, `…-I2V` | t2v, i2v |
@@ -42,14 +46,29 @@ a standalone single-modality launcher.
 
 1. **Install** — installs a Python env and the lightweight server (catalog +
    downloads only; fast).
-2. **Install Generation** — installs the heavy PyTorch + Diffusers engine. Run
-   this once before generating.
+2. **Install Generation** — installs the locked native MLX and
+   PyTorch/Diffusers engines. Run this once before generating.
 3. **Start** — launches the server and opens the Web UI.
-4. In the **Models** tab, download a model (CogVideoX-2B is the lowest-memory local option, but 24 GB is the audited minimum).
+4. In the **Models** tab, download **Lance 3B Video MLX** for a 16 GB or 24 GB
+   Mac. Its weights are about 15.6 GB, so leave enough free disk space.
 5. In the **Generate** tab, pick the model, choose a mode, write a prompt (and
    upload an image/clip for i2v/v2v), then **Generate video**.
 
 Gated repos need a Hugging Face token — paste it in **Settings**.
+
+### Lance MLX memory profiles
+
+- **16 GB:** automatic `relay` mode loads one heavy phase at a time. Keep the
+  safe 512×512, 17-frame default and close other memory-heavy apps.
+- **24 GB+:** automatic `parallel` mode keeps all model phases resident during
+  the render. Video Studio still defaults to the same conservative clip profile;
+  you can raise frames up to 25.
+- The app enforces the upstream validated ≤25-frame / ≤16,128-latent-token
+  quality envelope. It does not list speculative MLX conversions that lack a
+  demonstrated end-to-end low-memory runtime.
+
+See the [Lance MLX source and measured memory modes](https://github.com/xocialize/lance-mlx)
+and the [Video bf16 model card](https://huggingface.co/mlx-community/Lance-3B-Video-bf16).
 
 **Install Generation / Reinstall Generation** stays in the Pinokio sidebar
 whether Video Studio is stopped, running through **Start**, or running as the
@@ -327,10 +346,11 @@ curl -s -X POST "$BASE/api/generate/jobs/<JOB_ID>/repair"
 
 ## Notes & limitations
 
-- **Apple Silicon only** (`darwin` / `arm64`). The engine targets the MPS
-  backend; some Diffusers ops fall back to CPU via `PYTORCH_ENABLE_MPS_FALLBACK`.
+- **Apple Silicon only** (`darwin` / `arm64`). Lance runs natively through MLX;
+  the other local families target MPS, with unsupported Diffusers ops allowed
+  to fall back to CPU through `PYTORCH_ENABLE_MPS_FALLBACK`.
 - **Frame counts** are rounded to each architecture's valid value (LTX/CogVideoX
-  → 8·n+1, Wan/HunyuanVideo → 4·n+1).
+  → 8·n+1, Lance/Wan/HunyuanVideo → 4·n+1).
 - The newest models may require a recent **diffusers** release; if a pipeline is
   missing, run **Install Generation** again (it reinstalls/updates the engine)
   or bump the pin in `app/requirements-generation.txt`.

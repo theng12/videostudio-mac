@@ -1,26 +1,24 @@
 """
 Video generation manager.
 
-Wraps 🤗 Diffusers video pipelines (LTX-Video, Wan 2.2, HunyuanVideo,
-CogVideoX) in a thread-per-job pattern that mirrors Image Studio's generation
-manager and the download manager. The torch/diffusers imports are wrapped in
-try/except so the server still runs (catalog / download browsing) when the
-heavy engine isn't installed yet — the generation endpoints just return 503.
+Dispatches native MLX pipelines (Lance) and 🤗 Diffusers pipelines
+(LTX-Video, Wan 2.2, HunyuanVideo, CogVideoX) through one thread-per-job
+manager. Heavy imports are optional so the server still runs for catalog and
+download browsing before Generation is installed.
 
-Runs on Apple's MPS backend when available (falls back to CPU). Output clips
-land in `app/output/<job_id>.mp4`.
+MLX runs directly on Apple Silicon; Diffusers uses MPS when available and falls
+back to CPU. Output clips land in `app/output/<job_id>.mp4`.
 
 Modes:
   - "txt2video"   : text → clip
   - "img2video"   : still image → clip (first-frame / image-to-video)
   - "video2video" : input clip + prompt → restyled clip (CogVideoX)
 
-NOTE: this engine is authored against documented Diffusers pipeline APIs. Heavy
-generation is intended for the big-memory target Mac; on smaller machines the
-server, catalog, downloads, and diagnostics all work, but a generation job may
-be very slow or run out of memory. Per-pipeline call kwargs are filtered by
-introspecting each pipeline's __call__ signature, so models with slightly
-different parameters (CogVideoX has no width/height knob, etc.) still work.
+NOTE: Lance is intentionally constrained to its upstream-validated low-memory
+envelope. The larger Diffusers families still target high-memory Macs and may
+be very slow or run out of memory on smaller machines. Per-pipeline call kwargs
+are filtered by introspecting each Diffusers pipeline's __call__ signature, so
+models with slightly different parameters still work.
 """
 from __future__ import annotations
 
@@ -43,10 +41,9 @@ from . import catalog
 
 
 # ───────────── module-level locks / paths ─────────────
-# Diffusers pipelines load multi-GB weights into a process-wide torch/MPS state
-# that isn't safe to run concurrently — parallel generations exhaust unified
-# memory. Serialize ALL generations behind this lock so batched submissions
-# just queue up in order.
+# Local pipelines load multi-GB weights into process-wide MLX or torch/MPS state
+# that isn't safe to run concurrently. Serialize ALL local generations behind
+# this lock so batched submissions queue in order.
 _GEN_LOCK = threading.Lock()
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
@@ -73,6 +70,24 @@ except Exception as e:  # pragma: no cover
 
 ENGINE_AVAILABLE = TORCH_AVAILABLE and DIFFUSERS_AVAILABLE
 
+LANCE_AVAILABLE = False
+LANCE_IMPORT_ERROR: Optional[str] = None
+try:
+    import mlx  # noqa: F401
+    import lance_mlx  # noqa: F401
+    from lance_mlx.pipeline.t2v import TextToVideoPipeline as _LancePipeline  # noqa: F401
+    LANCE_AVAILABLE = True
+except Exception as e:  # pragma: no cover - exercised only without the MLX engine
+    LANCE_IMPORT_ERROR = f"lance-mlx: {type(e).__name__}: {e}"
+
+DIFFUSERS_ENGINE_AVAILABLE = ENGINE_AVAILABLE
+ENGINE_AVAILABLE = DIFFUSERS_ENGINE_AVAILABLE or LANCE_AVAILABLE
+if not ENGINE_AVAILABLE and LANCE_IMPORT_ERROR:
+    ENGINE_IMPORT_ERROR = (
+        LANCE_IMPORT_ERROR if ENGINE_IMPORT_ERROR is None
+        else f"{ENGINE_IMPORT_ERROR}; {LANCE_IMPORT_ERROR}"
+    )
+
 
 # ───────────── pipeline dispatch tables ─────────────
 # (family, mode) → diffusers pipeline class name. Resolved lazily from the
@@ -93,13 +108,16 @@ _PIPELINE_CLASSES: dict[tuple[str, str], str] = {
 # Valid frame counts differ per architecture: LTX/CogVideoX want 8·n+1,
 # Wan/Hunyuan want 4·n+1. We round the requested count to the nearest valid one.
 _FRAME_BASE: dict[str, int] = {
-    "ltx-video": 8, "wan22": 4, "hunyuanvideo": 4, "cogvideox": 8,
+    "lance-mlx": 4, "ltx-video": 8, "wan22": 4,
+    "hunyuanvideo": 4, "cogvideox": 8,
 }
 
 
 # ───────────── diagnostics ─────────────
 
 _PACKAGE_CHECKLIST = [
+    ("mlx",             "Native Apple Silicon tensor engine"),
+    ("lance-mlx",       "Low-memory MLX video pipeline", "lance_mlx"),
     ("torch",           "PyTorch tensor engine (MPS backend on Apple Silicon)"),
     ("diffusers",       "Video generation pipelines (engine core)"),
     ("transformers",   "Text encoders for the prompt"),
@@ -116,16 +134,20 @@ _PACKAGE_CHECKLIST = [
 # video family rides the same torch+diffusers stack.
 _COMMON_REQS = ["torch", "diffusers", "transformers", "imageio-ffmpeg", "numpy"]
 _ENGINE_REQUIREMENTS = {fid: list(_COMMON_REQS) for fid in catalog.FAMILIES}
+_ENGINE_REQUIREMENTS["lance-mlx"] = ["mlx", "lance-mlx", "imageio-ffmpeg", "numpy"]
 
-# Every catalog family has a working dispatch branch (see _PIPELINE_CLASSES).
+# Every catalog family has a working local-engine dispatch branch.
 _WIRED_FAMILIES = set(catalog.FAMILIES.keys())
 
 
 def pipeline_available(family: str, mode: str) -> bool:
-    """Whether the installed Diffusers exposes this exact pipeline class."""
+    """Whether the installed local engine exposes this exact pipeline."""
+    if family == "lance-mlx":
+        return LANCE_AVAILABLE and mode == "txt2video"
     class_name = _PIPELINE_CLASSES.get((family, mode))
     if not class_name:
         return False
+    return _has_diffusers_class(class_name)
 
 
 def _has_diffusers_class(class_name: str) -> bool:
@@ -138,13 +160,10 @@ def _has_diffusers_class(class_name: str) -> bool:
 
 def model_pipeline_available(model: catalog.ModelEntry, mode: str) -> bool:
     """Check the exact class selected for a catalog row."""
+    if model.engine == "mlx-lance":
+        return LANCE_AVAILABLE and mode == "txt2video"
     class_name = model.pipeline_classes.get(mode) or _PIPELINE_CLASSES.get((model.family, mode))
     if not class_name:
-        return False
-    try:
-        import diffusers
-        return hasattr(diffusers, class_name)
-    except Exception:
         return False
     try:
         import diffusers
@@ -203,6 +222,7 @@ def diagnostics() -> dict:
             model.pipeline_classes.get(mode) or _PIPELINE_CLASSES.get((family, mode))
             for model in catalog.CATALOG if model.family == family
             for mode in model.capabilities
+            if model.engine == "diffusers"
         }
         missing_pipelines = [class_name for class_name in sorted(required_classes)
                              if class_name and deps_ok and not _has_diffusers_class(class_name)]
@@ -321,6 +341,11 @@ def _free_cached_pipeline() -> None:
                 torch.cuda.empty_cache()
         except Exception:
             pass
+        try:
+            import mlx.core as mx
+            mx.clear_cache()
+        except Exception:
+            pass
 
 
 def _torch_dtype(name: str):
@@ -376,6 +401,29 @@ def _load_pipeline(model: catalog.ModelEntry, mode: str):
         except Exception:
             pass
 
+    _PIPE_CACHE["key"] = key
+    _PIPE_CACHE["pipe"] = pipe
+    return pipe
+
+
+def _load_lance_pipeline(model: catalog.ModelEntry):
+    """Load Lance from its completed HF snapshot using adaptive MLX memory mode."""
+    key = (model.repo, "txt2video")
+    if _PIPE_CACHE.get("key") == key and _PIPE_CACHE.get("pipe") is not None:
+        return _PIPE_CACHE["pipe"]
+
+    _free_cached_pipeline()
+    from lance_mlx.pipeline.t2v import TextToVideoPipeline
+    from . import cache
+
+    _cached_repo, snapshot = cache.resolve_cached_repo(model.repo, model.aliases)
+    if snapshot is None:
+        raise RuntimeError("Lance MLX weights are not fully cached. Download the model first.")
+    pipe = TextToVideoPipeline.from_pretrained(
+        lance_weights_dir=snapshot,
+        vae_safetensors=snapshot / "vae.safetensors",
+        memory_mode="auto",
+    )
     _PIPE_CACHE["key"] = key
     _PIPE_CACHE["pipe"] = pipe
     return pipe
@@ -823,9 +871,6 @@ class VideoManager:
                 self._persist()
 
     def _generate(self, job: VideoJob, output_path: Path) -> None:
-        import torch
-        from diffusers.utils import export_to_video, load_image, load_video
-
         p = job.params
         model = catalog.get_model(p["repo"])
         if model is None:
@@ -865,6 +910,18 @@ class VideoManager:
             seed = random.randint(0, 2**31 - 1)
         seed = int(seed)
         job.resolved_seed = seed
+
+        if model.engine == "mlx-lance":
+            self._generate_lance(
+                job, model, output_path, frames=frames, fps=fps, steps=steps,
+                guidance=guidance, width=width, height=height, seed=seed,
+            )
+            return
+        if model.engine != "diffusers":
+            raise RuntimeError(f"Unsupported local video engine: {model.engine}")
+
+        import torch
+        from diffusers.utils import export_to_video, load_image, load_video
         generator = torch.Generator().manual_seed(seed)   # CPU generator (MPS-safe)
 
         job.stage = "loading"
@@ -914,6 +971,70 @@ class VideoManager:
         job.stage = "encoding"
         job.progress = 0.95
         export_to_video(frames_out, str(output_path), fps=fps)
+        job.media_info = _probe_output(output_path)
+
+    def _generate_lance(
+        self, job: VideoJob, model: catalog.ModelEntry, output_path: Path, *,
+        frames: int, fps: int, steps: int, guidance: float,
+        width: int, height: int, seed: int,
+    ) -> None:
+        """Generate a short t2v clip through Lance's native MLX pipeline.
+
+        The upstream loader resolves `memory_mode="auto"` to single-shot relay
+        below ~18 GiB and parallel mode on 24 GB+ Macs. Restrict 16 GB
+        machines to the upstream-measured 512² envelope and all machines to the
+        validated <=16,128-token quality envelope.
+        """
+        if job.mode != "txt2video":
+            raise ValueError("Lance MLX currently supports text-to-video only.")
+        from . import system_info
+
+        memory_gb = system_info.detect_memory_gb()
+        if memory_gb is not None and memory_gb < 24 and width * height > 512 * 512:
+            raise ValueError(
+                "Lance MLX is limited to 512×512 on Macs below 24 GB. "
+                "Use the 512×512 defaults or move this render to the 24 GB Mac."
+            )
+        latent_tokens = ((frames - 1) // 4 + 1) * (height // 16) * (width // 16)
+        if latent_tokens > 16_128:
+            raise ValueError(
+                "This Lance clip exceeds the upstream-validated quality envelope. "
+                "Reduce resolution or keep the clip at 25 frames or fewer."
+            )
+
+        job.stage = "loading"
+        job.progress = 0.10
+        pipe = _load_lance_pipeline(model)
+        if job.cancel_event.is_set():
+            raise _Cancelled()
+
+        job.stage = "generating"
+        job.progress = 0.15
+        frames_out = pipe.generate(
+            job.params.get("prompt", ""),
+            num_frames=frames,
+            height=height,
+            width=width,
+            num_steps=steps,
+            cfg_scale=guidance,
+            seed=seed,
+            memory_mode="auto",
+            tile_vae=True,
+            lossless_decode=True,
+        )
+        if job.cancel_event.is_set():
+            raise _Cancelled()
+
+        job.current_step = steps
+        job.progress = 0.90
+        job.stage = "encoding"
+        import imageio.v2 as imageio
+        import numpy as np
+
+        with imageio.get_writer(str(output_path), fps=fps, codec="libx264") as writer:
+            for frame in frames_out:
+                writer.append_data(np.asarray(frame, dtype=np.uint8))
+        job.progress = 0.95
         job.media_info = _probe_output(output_path)
 
     @staticmethod

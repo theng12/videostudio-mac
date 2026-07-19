@@ -222,6 +222,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
   font-size: 8px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
 }
 .model-source-badge.local, .variant-source.local { color: var(--good); }
+.variant-source.mlx { color: #69d3ff; border-color: color-mix(in srgb, #69d3ff 38%, var(--border)); }
 .model-source-badge.cloud, .variant-source.cloud, .family-provider { color: var(--accent); }
 .family-key-needed { color: var(--muted); }
 

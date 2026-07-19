@@ -1,12 +1,12 @@
 {
   "version": "3.6",
   "title": "Video Studio KH",
-  "description": "Apple Silicon video studio — text-to-video and video-to-video with LTX-Video, Wan 2.2, HunyuanVideo, and CogVideoX. Powered by PyTorch (MPS) + Diffusers.",
+  "description": "Apple Silicon video studio — native MLX video for 16/24 GB Macs plus LTX-Video, Wan 2.2, HunyuanVideo, and CogVideoX through PyTorch (MPS) + Diffusers.",
   "icon": "icon.png",
   "platform": ["darwin"],
   "arch": ["arm64"],
   "links": {
     "documentation": "README.md"
   },
-  "tags": ["video", "t2v", "v2v", "diffusers", "mac"]
+  "tags": ["video", "t2v", "v2v", "mlx", "diffusers", "mac"]
 }

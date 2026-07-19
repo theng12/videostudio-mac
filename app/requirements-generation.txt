@@ -1,7 +1,7 @@
 # Heavy generation dependencies — installed by install_generation.js, NOT by
 # install.js. Splitting these out keeps the first install fast and lets users
 # browse the catalog / manage downloads without committing to the multi-GB
-# PyTorch + Diffusers video toolchain.
+# native MLX and PyTorch + Diffusers video toolchains.
 #
 # Apple Silicon: the default torch wheel ships the MPS (Metal) backend, so no
 # CUDA index is needed. PYTORCH_ENABLE_MPS_FALLBACK=1 (set in start.js/serve.sh)
@@ -19,6 +19,12 @@ transformers==5.13.1
 accelerate==1.14.0
 safetensors==0.8.0
 
+# ── Native Apple Silicon video engine ──
+# Pinned to the exact upstream commit whose relay/parallel memory modes were
+# measured against the Lance-3B-Video MLX checkpoint. This package pins its
+# matching mlx-video + mlx-vlm commits transitively.
+lance-mlx @ git+https://github.com/xocialize/lance-mlx.git@f8ecc5a86d28b94bd8dc688c200c3e22ffafff4a
+
 # ── Text-encoder + tokenizer helpers some pipelines need ──
 sentencepiece==0.2.1
 ftfy==6.3.1
@@ -30,5 +36,9 @@ imageio-ffmpeg==0.6.0
 opencv-python-headless==5.0.0.93
 
 # ── Numerics + image I/O for image-to-video inputs ──
-numpy==2.5.1
+# Lance's transitive audio helpers pull in librosa/numba. Pin a Python 3.12-
+# compatible pair explicitly: without this, the resolver can select ancient
+# numba 0.53.1 (Python <3.10 only) beside the newest unconstrained numpy.
+numpy==2.3.5
+numba==0.66.0
 pillow==12.3.0
