@@ -81,6 +81,21 @@ changes to the same environment.
 or updating is in progress. It opens Pinokio's release-notes viewer at the
 latest version while keeping the full history available below it.
 
+### Release integrity
+
+Every repository change must ship with both a higher `VERSION` and a detailed
+top entry in `CHANGELOG.md`, which is the source shown by **What's New**. A
+release guard enforces that contract in pull requests and pushes to `main`, and
+also rejects malformed or mismatched release metadata. Run it locally with:
+
+```bash
+python scripts/check_release.py --base origin/main
+```
+
+The regular test suite checks the current release metadata even when no base
+revision is supplied. A metadata-only correction may amend the current release
+notes without recursively requiring another version bump.
+
 The server binds `0.0.0.0:47872` so other devices on your LAN / Tailscale can
 reach the API directly. On this machine it's also at `http://localhost:47872`.
 

@@ -10,6 +10,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.10.1] — 2026-07-20
+
+### Added — enforced versioning and complete What's New notes
+
+- Added a release guard that requires every substantive repository change to
+  increase `VERSION`, update `CHANGELOG.md`, and make the newest detailed
+  changelog entry match the new version.
+- Added GitHub checks for pull requests and pushes to `main`, plus local
+  regression coverage for missing bumps, missing notes, valid releases, and
+  metadata-only corrections.
+- Documented the one-command local release check. The existing persistent
+  **What's New** button remains unchanged because it already opens this
+  changelog newest-first in every launcher state; future entries now cannot be
+  silently omitted or mismatched.
+
+### Verification
+
+- The release guard passes both its static metadata check and a comparison
+  against v0.10.0. The full test suite, Python compilation, workflow parsing,
+  frontend/launcher syntax, and whitespace checks pass. No dependency, model,
+  generation, updater, or live-process behavior changed.
+
 ## [0.10.0] — 2026-07-20
 
 ### Added — configurable local video memory management
