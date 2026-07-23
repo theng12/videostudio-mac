@@ -85,7 +85,7 @@ function studio() {
     deleteArmed: null,       // job.id currently armed for a two-click single delete
     pruneArmed: null,        // prune mode ("keep50" | "old30") armed for a two-click confirm
     outputStats: { bytes: 0, count: 0, loaded: false },
-    storagePolicy: { enabled: true, retention_days: 3, max_gb: 80, used_bytes: 0, over_limit: false, loaded: false, busy: false, message: "" },
+    storagePolicy: { enabled: true, retention_days: 30, max_gb: 80, used_bytes: 0, over_limit: false, loaded: false, busy: false, message: "" },
     memoryPolicy: {
       mode:"performance", default_mode:"performance", idle_seconds:null,
       loaded_pipeline:null, pipeline_idle_seconds:null, next_release_at:null,

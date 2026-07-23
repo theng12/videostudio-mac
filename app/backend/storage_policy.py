@@ -11,10 +11,19 @@ from pathlib import Path
 from fastapi import HTTPException
 
 SETTINGS_FILE = Path(__file__).resolve().parent / "storage_policy.json"
-DEFAULTS = {"enabled": True, "retention_days": 3, "max_gb": 80.0}
+POLICY_VERSION = 2
+DEFAULTS = {"enabled": True, "retention_days": 30, "max_gb": 80.0}
 _LOCK = threading.RLock()
 _START_LOCK = threading.Lock()
 _STARTED = False
+
+
+def _write(value: dict) -> None:
+    payload = {**value, "policy_version": POLICY_VERSION}
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    partial = SETTINGS_FILE.with_suffix(".json.tmp")
+    partial.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    os.replace(partial, SETTINGS_FILE)
 
 
 def _read() -> dict:
@@ -22,16 +31,28 @@ def _read() -> dict:
         value = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         value = {}
-    out = {**DEFAULTS, **(value if isinstance(value, dict) else {})}
+    saved = value if isinstance(value, dict) else {}
+    out = {**DEFAULTS, **saved}
     if not isinstance(out["enabled"], bool): out["enabled"] = True
     try:
         out["retention_days"] = int(out["retention_days"])
         out["max_gb"] = float(out["max_gb"])
     except (TypeError, ValueError):
-        out.update(retention_days=3, max_gb=80.0)
-    if not 1 <= out["retention_days"] <= 3650: out["retention_days"] = 3
+        out.update(
+            retention_days=DEFAULTS["retention_days"],
+            max_gb=DEFAULTS["max_gb"],
+        )
+    if not 1 <= out["retention_days"] <= 3650:
+        out["retention_days"] = DEFAULTS["retention_days"]
     if not 1 <= out["max_gb"] <= 1000: out["max_gb"] = 80.0
-    return out
+    try:
+        policy_version = int(saved.get("policy_version", 1))
+    except (TypeError, ValueError):
+        policy_version = 1
+    if policy_version < POLICY_VERSION and out["retention_days"] == 3:
+        out["retention_days"] = DEFAULTS["retention_days"]
+        _write(out)
+    return {key: out[key] for key in DEFAULTS}
 
 
 def save(enabled: object, retention_days: object, max_gb: object) -> dict:
@@ -43,10 +64,7 @@ def save(enabled: object, retention_days: object, max_gb: object) -> dict:
     if not 1 <= days <= 3650: raise HTTPException(400, "retention_days must be between 1 and 3650")
     if not 1 <= maximum <= 1000: raise HTTPException(400, "max_gb must be between 1 and 1000")
     value = {"enabled": enabled, "retention_days": days, "max_gb": maximum}
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    partial = SETTINGS_FILE.with_suffix(".json.tmp")
-    partial.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    os.replace(partial, SETTINGS_FILE)
+    _write(value)
     return value
 
 

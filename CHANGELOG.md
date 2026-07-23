@@ -10,6 +10,21 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.10.2] — 2026-07-23
+
+### Changed — 30-day fleet backup retention
+
+- Raised completed video-output backup retention from 3 days to 30 days while
+  retaining the existing 80 GB hard cap and oldest-first emergency cleanup.
+- Existing saved 3-day policies migrate automatically once during update.
+  Explicit choices saved afterward remain respected, including on workers that
+  reconnect after being offline.
+
+### Verification
+
+- Added regression coverage for automatic legacy migration and post-migration
+  overrides. **Just run Update.**
+
 ## [0.10.1] — 2026-07-20
 
 ### Added — enforced versioning and complete What's New notes
