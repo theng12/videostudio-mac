@@ -142,13 +142,20 @@ PUT  /api/memory-policy   # { "mode": "performance|balanced|memory_saver|immedia
 POST /api/memory/release
 ```
 
+A verified local allocator failure automatically unloads the pipeline, clears
+device caches, removes incomplete output, and retries once with the same
+resolved seed. If the retry also fails, Video Studio persists the failed render
+before requesting a supervised restart. Other queued local renders survive and
+resume in order after restart. Health and diagnostics expose privacy-safe
+memory and watchdog restart-rate evidence for Studio Hub alerts.
+
 After Update and the next normal restart, Activity Monitor labels the backend
 **Video Studio Mac** instead of a generic Python process.
 
 ## Local output retention
 
 Completed MP4s are temporary local backups. Automatic cleanup is enabled by
-default, keeps them for three days, and enforces an 80 GB hard cap by deleting
+default, keeps them for 30 days, and enforces an 80 GB hard cap by deleting
 the oldest completed clips first. Active jobs, models, source uploads,
 credentials, provider state, and settings are excluded.
 

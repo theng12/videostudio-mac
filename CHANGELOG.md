@@ -10,6 +10,27 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.10.3] — 2026-07-24
+
+### Fixed — self-healing local video memory failures
+
+- Local MLX and Diffusers renders now retry one verified allocator failure
+  after unloading the failed pipeline, clearing accelerator caches, deleting
+  incomplete MP4 output, and preserving the resolved seed.
+- A second allocator failure records the render as failed before requesting a
+  launchd-supervised restart. Previously queued local renders now survive that
+  restart and resume in their original order; only a render that was actively
+  executing during an unexpected process loss is marked interrupted.
+- Health and diagnostics now expose privacy-safe memory and bounded watchdog
+  restart-rate evidence. The watchdog requires three consecutive failed health
+  probes and resets its streak on recovery.
+
+### Verification
+
+- Added regression coverage for same-seed recovery, normal-error exclusion,
+  restart ordering, queued-job restoration, active-job interruption, restart
+  telemetry, and three-probe watchdog behavior. **Just run Update.**
+
 ## [0.10.2] — 2026-07-23
 
 ### Changed — 30-day fleet backup retention

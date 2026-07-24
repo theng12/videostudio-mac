@@ -49,6 +49,41 @@ _GEN_LOCK = threading.Lock()
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 HISTORY_FILE = OUTPUT_DIR / ".history.json"
 HISTORY_MAX = 200   # keep last N completed jobs; oldest are trimmed off disk
+MEMORY_RETRY_LIMIT = 1
+MEMORY_RESTART_FAILURES = 2
+
+
+def _memory_snapshot() -> Optional[dict]:
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        return {
+            "total_gb": round(vm.total / 1e9, 2),
+            "available_gb": round(vm.available / 1e9, 2),
+            "used_gb": round(vm.used / 1e9, 2),
+            "percent": float(vm.percent),
+        }
+    except Exception:
+        return None
+
+
+def _is_memory_failure(exc: BaseException) -> bool:
+    if isinstance(exc, MemoryError):
+        return True
+    message = f"{type(exc).__name__}: {exc}".lower()
+    return any(
+        marker in message
+        for marker in (
+            "out of memory",
+            "out-of-memory",
+            "mps backend out of memory",
+            "cannot allocate memory",
+            "failed to allocate memory",
+            "metal allocation failed",
+            "mlx allocation failed",
+            "std::bad_alloc",
+        )
+    )
 
 
 # ───────────── soft import of the heavy engine ─────────────
@@ -468,6 +503,10 @@ class VideoManager:
         self._jobs: dict[str, VideoJob] = {}
         self._local_queue: list[str] = []
         self._last_local_activity_at: Optional[float] = None
+        self._consecutive_memory_failures = 0
+        self._last_memory_event: Optional[dict] = None
+        self._restart_scheduled = False
+        self._restart_timer_started = False
         self._load_history()
 
     # ----- public API -----
@@ -519,6 +558,15 @@ class VideoManager:
             return None
         return max(0.0, (time.time() if now is None else now) - self._last_local_activity_at)
 
+    def memory_status(self) -> dict:
+        return {
+            "snapshot": _memory_snapshot(),
+            "consecutive_failures": self._consecutive_memory_failures,
+            "restart_scheduled": self._restart_scheduled,
+            "last_event": self._last_memory_event,
+            "service_supervised": self._service_installed(),
+        }
+
     def release_memory(self, reason: str = "manual") -> dict:
         if self.has_active_local_jobs():
             raise RuntimeError("a local video render is queued or running")
@@ -528,6 +576,103 @@ class VideoManager:
             return _free_cached_pipeline()
         finally:
             _GEN_LOCK.release()
+
+    @staticmethod
+    def _service_installed() -> bool:
+        root = Path(__file__).resolve().parents[2]
+        return (root / "service" / ".installed").is_file()
+
+    def _record_memory_failure(self, exc: BaseException) -> None:
+        self._consecutive_memory_failures += 1
+        self._last_memory_event = {
+            "time": time.time(),
+            "error_type": type(exc).__name__,
+            "snapshot": _memory_snapshot(),
+        }
+        _free_cached_pipeline()
+        print(
+            f"[vid] verified memory failure {self._consecutive_memory_failures}/"
+            f"{MEMORY_RESTART_FAILURES}; pipeline and allocator caches evicted",
+            file=sys.stderr,
+            flush=True,
+        )
+        if (
+            self._consecutive_memory_failures < MEMORY_RESTART_FAILURES
+            or self._restart_scheduled
+        ):
+            return
+        if not self._service_installed():
+            print(
+                "[vid] repeated memory failures without startup-service "
+                "supervision; keeping Video Studio alive",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        self._restart_scheduled = True
+
+    def _start_scheduled_restart(self) -> None:
+        if not self._restart_scheduled or self._restart_timer_started:
+            return
+        self._restart_timer_started = True
+
+        def _exit_for_launchd() -> None:
+            print(
+                "[vid] restarting after repeated memory failures; launchd "
+                "KeepAlive will restore Video Studio",
+                file=sys.stderr,
+                flush=True,
+            )
+            os._exit(75)
+
+        timer = threading.Timer(0.75, _exit_for_launchd)
+        timer.daemon = True
+        timer.start()
+
+    def _generate_with_memory_recovery(
+        self,
+        job: VideoJob,
+        output_path: Path,
+    ) -> None:
+        retries = 0
+        while True:
+            try:
+                self._generate(job, output_path)
+                self._consecutive_memory_failures = 0
+                return
+            except _Cancelled:
+                raise
+            except Exception as exc:
+                try:
+                    output_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                job.output_path = None
+                job.media_info = {}
+                if _is_memory_failure(exc):
+                    self._record_memory_failure(exc)
+                    if retries < MEMORY_RETRY_LIMIT and not self._restart_scheduled:
+                        retries += 1
+                        if job.resolved_seed is not None:
+                            job.params["seed"] = job.resolved_seed
+                        job.stage = "preparing"
+                        job.progress = 0.05
+                        job.current_step = 0
+                        print(
+                            "[vid] retrying local render once with the same seed "
+                            "after memory recovery",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        continue
+                else:
+                    self._consecutive_memory_failures = 0
+                if self._restart_scheduled:
+                    raise RuntimeError(
+                        "Repeated memory failures; Video Studio is restarting "
+                        "automatically under launchd supervision."
+                    ) from exc
+                raise
 
     def cancel(self, job_id: str) -> bool:
         """Signal cancellation. A queued job flips to 'cancelled' immediately so
@@ -762,15 +907,33 @@ class VideoManager:
             return
         try:
             payload = json.loads(HISTORY_FILE.read_text())
+            recovered_queued: list[VideoJob] = []
             for raw in payload.get("jobs", []):
                 job = self._from_disk(raw)
                 if job is not None:
-                    if job.state in ("queued", "running") and not job.params.get("cloud"):
+                    if job.state == "queued" and not job.params.get("cloud"):
+                        job.stage = "queued"
+                        job.progress = 0.0
+                        job.current_step = 0
+                        job.started_at = None
+                        job.finished_at = None
+                        job.error = None
+                        self._local_queue.append(job.job_id)
+                        recovered_queued.append(job)
+                    elif job.state == "running" and not job.params.get("cloud"):
                         job.state = "error"
                         job.stage = "interrupted"
                         job.error = "Local generation was interrupted by an app restart. Reuse its settings to queue a fresh local render."
                         job.finished_at = time.time()
                     self._jobs[job.job_id] = job
+            for job in recovered_queued:
+                job.thread = threading.Thread(
+                    target=self._run,
+                    args=(job,),
+                    name=f"vid-{job.job_id}",
+                    daemon=True,
+                )
+                job.thread.start()
             print(f"[vid] loaded {len(self._jobs)} jobs from history", flush=True)
         except Exception as e:
             print(f"[vid] load history failed: {e}", file=sys.stderr, flush=True)
@@ -880,7 +1043,7 @@ class VideoManager:
 
             try:
                 output_path = OUTPUT_DIR / f"{job.job_id}.mp4"
-                self._generate(job, output_path)
+                self._generate_with_memory_recovery(job, output_path)
                 if job.cancel_event.is_set():
                     job.state = "cancelled"
                     job.stage = "cancelled"
@@ -914,6 +1077,7 @@ class VideoManager:
                     _free_cached_pipeline()
                 self._finish_queue_slot(job)
                 self._persist()
+                self._start_scheduled_restart()
 
     def _generate(self, job: VideoJob, output_path: Path) -> None:
         p = job.params

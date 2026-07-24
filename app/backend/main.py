@@ -50,6 +50,7 @@ from . import spend, cloud_jobs
 from .providers import registry as providers_registry
 from .downloads import manager
 from .video import OUTPUT_DIR, manager as gen_manager, diagnostics as gen_diagnostics, model_pipeline_available
+from .restart_health import restart_rate_snapshot
 from .imports import import_path, scan_for_candidates
 from .fleet_auth import load_token as load_fleet_token, make_middleware as fleet_middleware, manifest
 from .auto_update import UpdateError
@@ -221,6 +222,8 @@ def health() -> dict:
         "app_version": APP_VERSION,
         "hf_home": str(cache.hf_home()),
         "hub_dir": str(cache.hub_dir()),
+        "memory": gen_manager.memory_status()["snapshot"],
+        "restart_health": restart_rate_snapshot(),
     }
 
 
@@ -720,6 +723,8 @@ def generation_diagnostics() -> dict:
     `app_version` so the frontend doesn't need an extra round-trip."""
     data = gen_diagnostics()
     data["app_version"] = APP_VERSION
+    data["memory_recovery"] = gen_manager.memory_status()
+    data["restart_health"] = restart_rate_snapshot()
     return data
 
 
