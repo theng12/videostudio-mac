@@ -24,7 +24,7 @@ module.exports = {
       // through pull+install and only blips at the final kickstart. Stopped: no-op.
       when: "{{running('start.js')}}",
       method: "script.stop",
-      params: { uri: "start.js" }
+      params: { uri: "{{path.resolve(cwd, 'start.js')}}" }
     },
     {
       method: "shell.run",

@@ -1,5 +1,6 @@
 from pathlib import Path
 import importlib.util
+import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,3 +43,13 @@ def test_metadata_only_correction_does_not_demand_another_release():
         changed_paths=["CHANGELOG.md"],
         latest_changelog_version="1.2.3",
     ) == []
+
+
+def test_all_launcher_stops_use_canonical_app_local_uris():
+    for name in ("update.js", "install_generation.js"):
+        source = (ROOT / name).read_text(encoding="utf-8")
+        assert 'uri: "{{path.resolve(cwd, \'start.js\')}}"' in source
+        assert not re.search(
+            r'method:\s*"script\.stop",\s*params:\s*\{\s*uri:\s*"start\.js"',
+            source,
+        )
