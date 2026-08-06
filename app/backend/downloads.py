@@ -19,6 +19,7 @@ This is server-driven and outside our control.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -27,7 +28,23 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from huggingface_hub import HfApi, snapshot_download
+# Hugging Face's Xet transport can wedge mid-transfer while holding the repo
+# file lock: bytes stop growing on disk and ``snapshot_download`` never
+# returns, so the stall watchdog below can only cancel and restart it.  Because
+# each attempt writes its own ``<blob>.<suffix>.incomplete``, a cancelled
+# attempt's bytes are not picked up by the next one, so progress fragments
+# across temp files and a large repo can loop without ever completing --
+# the same failure mode already hit Chat Studio, Voice Studio, and Image
+# Studio.  With the classic HTTP transport the same repos completed in one
+# pass.
+#
+# This must run before huggingface_hub is imported, because its constants
+# module reads the flag at import time.  Set VIDEOSTUDIO_ENABLE_XET=1 to opt
+# back in.
+if os.environ.get("VIDEOSTUDIO_ENABLE_XET") != "1":
+    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
+from huggingface_hub import HfApi, snapshot_download  # noqa: E402
 from huggingface_hub.utils import HfHubHTTPError
 
 from . import cache, settings
