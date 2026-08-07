@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -192,3 +193,24 @@ def test_ui_does_not_hardcode_performance_as_the_default() -> None:
     assert "Performance · default" not in markup
     for mode in ("performance", "balanced", "memory_saver", "immediate"):
         assert f"memoryPolicy.default_mode==='{mode}'" in markup
+
+
+def test_psutil_is_declared_in_the_base_requirements() -> None:
+    """memory_policy.default_mode() imports psutil unconditionally, on every
+    install — not just installs that also pull in the optional generation
+    stack. psutil was once listed only in requirements-generation.lock.txt;
+    a base-only install would then hit the caught ImportError inside
+    default_mode() and silently fall back to DEFAULT_MODE regardless of host
+    RAM, defeating the machine-aware default on exactly the small machines it
+    targets. Pin it here so that gap can't regress silently."""
+    app_root = Path(__file__).resolve().parents[1]
+    requirements = (app_root / "requirements.txt").read_text(encoding="utf-8")
+    lock = (app_root / "requirements.lock.txt").read_text(encoding="utf-8")
+    assert re.search(r"(?m)^psutil(==|>=)", requirements), (
+        "psutil must be declared in requirements.txt (the base install), "
+        "not only in requirements-generation.lock.txt"
+    )
+    assert re.search(r"(?m)^psutil==", lock), (
+        "psutil must be pinned in requirements.lock.txt (the base install), "
+        "not only in requirements-generation.lock.txt"
+    )

@@ -5,3 +5,10 @@ sse-starlette==3.4.5
 python-multipart==0.0.32
 setuptools==83.0.0
 setproctitle==1.3.7
+# Host memory sizing for the idle-release policy's machine-aware default
+# (memory_policy.default_mode). This is a base-server dependency, not a
+# generation-stack one: default_mode() runs on every install regardless of
+# whether the optional generation stack has been installed, and its
+# ImportError fallback silently masks a missing psutil by defaulting to the
+# roomy-machine mode — exactly the wrong direction on a small Mac.
+psutil==7.2.2

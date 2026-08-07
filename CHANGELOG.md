@@ -10,6 +10,25 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.10.8] — 2026-08-08
+
+### Fixed — `psutil` was not a declared base dependency
+
+- `memory_policy.default_mode()` imports `psutil` unconditionally on every
+  install to size the machine-aware default, but `psutil` was only listed in
+  `requirements-generation.lock.txt` — the optional generation stack, not
+  the base install `install.js` actually runs (`requirements.lock.txt`).
+- On a genuinely fresh base-only install, `psutil` would be missing; the
+  `ImportError` is caught and swallowed inside `default_mode()`, silently
+  falling back to `DEFAULT_MODE` ("balanced") regardless of host memory —
+  quietly defeating the exact fix v0.10.6 shipped, on the machines that need
+  it most.
+- Added `psutil==7.2.2` to `requirements.txt` and pinned the same in
+  `requirements.lock.txt` so the base install always has it. Left the
+  generation-stack lock untouched. Added a test asserting psutil is declared
+  in the base requirements so this can't regress silently.
+- Same fix as Chat Studio v1.24.7.
+
 ## [0.10.7] — 2026-08-08
 
 ### Fixed — the mode picker still called Performance the default
