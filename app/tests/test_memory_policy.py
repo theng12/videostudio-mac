@@ -131,7 +131,11 @@ def test_memory_api_frontend_and_process_title(tmp_path, monkeypatch):
     html = (root / "frontend" / "index.html").read_text(encoding="utf-8")
     script = (root / "frontend" / "app.js").read_text(encoding="utf-8")
     assert "Release Memory / Unload Model" in html
-    assert "Performance · default" in html
+    # The "· default" badge is no longer hardcoded onto Performance: since
+    # v0.10.6 the default follows the host's memory, so the label is bound
+    # to whatever the backend reports.
+    assert "Performance" in html
+    assert "memoryPolicy.default_mode==='performance'" in html
     assert 'fetch("/api/memory-policy"' in script
     assert 'fetch("/api/memory/release"' in script
     assert PROCESS_TITLE == "Video Studio Mac"
@@ -177,3 +181,14 @@ def test_operator_choice_still_wins_over_the_machine_default(monkeypatch, tmp_pa
     settings.write_text('{"mode": "performance"}\n', encoding="utf-8")
     monkeypatch.setattr(memory_policy, "SETTINGS_FILE", settings)
     assert memory_policy._read()["mode"] == "performance"
+
+
+def test_ui_does_not_hardcode_performance_as_the_default() -> None:
+    """The mode picker said "Performance · default". Since v0.10.6 the default is
+    chosen from the host's memory, so a hardcoded label is simply wrong on every
+    8 GB machine. The badge must follow whatever the backend reports."""
+    markup = (Path(__file__).resolve().parents[1]
+              / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "Performance · default" not in markup
+    for mode in ("performance", "balanced", "memory_saver", "immediate"):
+        assert f"memoryPolicy.default_mode==='{mode}'" in markup
