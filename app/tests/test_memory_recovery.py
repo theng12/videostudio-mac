@@ -109,7 +109,7 @@ def test_normal_failures_do_not_retry_or_trigger_memory_restart(tmp_path, monkey
     assert video._is_memory_failure(MemoryError())
     assert video._is_memory_failure(RuntimeError("std::bad_alloc"))
     assert not video._is_memory_failure(RuntimeError("not enough free disk space"))
-    assert not video._is_memory_failure(RuntimeError("provider connection timed out"))
+    assert not video._is_memory_failure(RuntimeError("network connection timed out"))
 
 
 def test_queued_local_jobs_resume_after_restart_but_running_job_does_not(

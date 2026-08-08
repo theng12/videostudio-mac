@@ -10,6 +10,33 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.11.0] — 2026-08-09
+
+### Changed — Video Studio is local-only
+
+- Removed the direct fal.ai, Kie.ai, and Replicate gateway: provider adapters,
+  remote catalog synchronization, paid-task polling and repair, spend tracking,
+  provider credentials, billing controls, cloud routes, cloud catalog entries,
+  and their dedicated tests and design documents are gone.
+- Simplified Generate, Models, and Settings around the native MLX and local
+  Diffusers engines. The catalog now contains only downloadable local models,
+  and the frontend no longer presents provider lanes, key prompts, paid-use
+  toggles, estimates, caps, or remote recovery actions.
+- Existing saved settings are filtered to the supported Hugging Face token, so
+  obsolete provider data is no longer loaded into application memory. The file
+  is left untouched until a normal settings write; no live credential or
+  running process was changed as part of this release.
+- Disposable legacy gateway jobs are ignored during history recovery instead
+  of being placed into the local queue. Existing local queued and interrupted
+  job recovery remains intact.
+- Preserved the local generation and download workflows, fleet manifest and
+  authentication, machine-aware idle memory release, manual memory release,
+  storage retention, health diagnostics, safe updates, and startup-service
+  integration.
+- Updated the README and model-catalog guide to document the local-only API and
+  the fleet-safe memory defaults accurately. A normal restart is required for
+  an already-running older backend to begin serving this release.
+
 ## [0.10.8] — 2026-08-08
 
 ### Fixed — `psutil` was not a declared base dependency

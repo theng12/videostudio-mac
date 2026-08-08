@@ -301,8 +301,6 @@ class VideoJob:
     media_info: dict = field(default_factory=dict)
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
-    # Persisted for restart recovery but intentionally omitted from serialize().
-    cloud_state: Optional[dict] = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
     thread: Optional[threading.Thread] = None
 
@@ -311,25 +309,6 @@ class VideoJob:
         if self.started_at is not None:
             end = self.finished_at if self.finished_at is not None else time.time()
             duration = max(0.0, end - self.started_at)
-        cloud_recovery = None
-        if self.cloud_state:
-            state = self.cloud_state
-            provider_terminal = bool(state.get("provider_terminal"))
-            has_resume_data = isinstance(state.get("submit_raw"), dict)
-            cloud_recovery = {
-                "provider": state.get("provider"),
-                "task_id": state.get("provider_job_id"),
-                "status": state.get("provider_state") or "polling",
-                "delayed": bool(state.get("delayed_at")),
-                "recoverable": has_resume_data and not provider_terminal and not self.output_path
-                               and self.state != "cancelled",
-                "submission_unknown": state.get("provider_state") == "submit-unknown",
-                "last_error": state.get("last_poll_error"),
-                "last_checked_at": state.get("last_checked_at"),
-                "poll_attempts": int(state.get("poll_attempts") or 0),
-            }
-        public_params = {k: v for k, v in self.params.items()
-                         if k not in ("image_data_uri", "provider_params")}
         return {
             "id": self.job_id,
             "mode": self.mode,
@@ -338,7 +317,7 @@ class VideoJob:
             "current_step": self.current_step,
             "total_steps": self.total_steps,
             "stage": self.stage,
-            "params": public_params,
+            "params": self.params,
             "output_path": self.output_path,
             "output_url": f"/api/generate/jobs/{self.job_id}/video" if self.output_path else None,
             "resolved_seed": self.resolved_seed,
@@ -347,7 +326,6 @@ class VideoJob:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": duration,
-            "cloud_recovery": cloud_recovery,
         }
 
 
@@ -540,7 +518,7 @@ class VideoManager:
 
     def has_active_local_jobs(self) -> bool:
         return any(
-            not job.params.get("cloud") and job.state in {"queued", "running", "cancelling"}
+            job.state in {"queued", "running", "cancelling"}
             for job in self.list_jobs()
         )
 
@@ -703,81 +681,8 @@ class VideoManager:
         mode = params.get("mode", "video2video")
         return self._submit(mode, params)
 
-    def submit_cloud(self, mode: str, params: dict, runner) -> VideoJob:
-        """Register a CLOUD job in the same registry the local engine uses, so it
-        shows up in list_jobs / SSE / /video like any other. `runner(job)` does
-        the provider submit→poll→download and sets job.output_path on success.
-
-        Cloud jobs do NOT take _GEN_LOCK (no local GPU) — several can run
-        concurrently, they're just HTTP polling."""
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        job = VideoJob(job_id=uuid.uuid4().hex[:12], mode=mode, params=params, total_steps=0)
-        job.params = {**params, "cloud": True}
-        with self._lock:
-            self._jobs[job.job_id] = job
-            self._persist()
-        job.thread = threading.Thread(
-            target=self._run_cloud, args=(job, runner), name=f"vid-cloud-{job.job_id}", daemon=True)
-        job.thread.start()
-        return job
-
-    def resume_cloud(self, job: VideoJob, runner) -> bool:
-        """Re-attach a persisted cloud job to its existing provider task."""
-        with self._lock:
-            if job.state not in ("queued", "running", "error") or not job.cloud_state:
-                return False
-            if job.thread and job.thread.is_alive():
-                return False
-            job.cancel_event.clear()
-            job.state = "queued"
-            job.error = None
-            job.finished_at = None
-            job.thread = threading.Thread(
-                target=self._run_cloud, args=(job, runner),
-                name=f"vid-cloud-{job.job_id}", daemon=True,
-            )
-            job.thread.start()
-        return True
-
     def persist_state(self) -> None:
         self._persist()
-
-    def _run_cloud(self, job: VideoJob, runner) -> None:
-        if job.cancel_event.is_set():
-            job.state = "cancelled"
-            job.stage = "cancelled"
-            job.finished_at = time.time()
-            self._persist()
-            return
-        job.state = "running"
-        job.stage = "provider"
-        job.started_at = job.started_at or time.time()
-        job.progress = 0.05
-        print(f"[vid] starting cloud {job.mode} {job.job_id}: {job.params.get('repo')}", flush=True)
-        try:
-            runner(job)
-            if job.cancel_event.is_set() or not job.output_path:
-                job.state = "cancelled" if job.cancel_event.is_set() else "error"
-                job.stage = "cancelled" if job.cancel_event.is_set() else "failed"
-                if job.state == "error" and not job.error:
-                    job.error = "cloud job produced no output"
-            else:
-                job.progress = 1.0
-                job.state = "done"
-                job.stage = "completed"
-                print(f"[vid] done cloud {job.job_id} → {job.output_path}", flush=True)
-        except Exception as e:
-            if job.cancel_event.is_set():
-                job.state = "cancelled"
-                job.stage = "cancelled"
-            else:
-                job.state = "error"
-                job.stage = "failed"
-                job.error = f"{type(e).__name__}: {e}"
-                print(f"[vid] cloud error {job.job_id}: {job.error}", file=sys.stderr, flush=True)
-        finally:
-            job.finished_at = time.time()
-            self._persist()
 
     def _submit(self, mode: str, params: dict) -> VideoJob:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -884,9 +789,8 @@ class VideoManager:
 
     def _persist(self) -> None:
         try:
-            # Pollers and the repair watchdog can persist concurrently. One lock
-            # protects the shared snapshot and temp-file replace from clobbering
-            # another job's durable provider task ID.
+            # Worker and API actions can persist concurrently. One lock protects
+            # the shared snapshot and atomic temp-file replace.
             with self._lock:
                 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
                 terminal = [j for j in self._jobs.values()
@@ -909,9 +813,13 @@ class VideoManager:
             payload = json.loads(HISTORY_FILE.read_text())
             recovered_queued: list[VideoJob] = []
             for raw in payload.get("jobs", []):
+                # v0.11 removed direct provider execution. Disposable legacy
+                # gateway jobs are ignored instead of entering the local queue.
+                if raw.get("cloud_state") or (raw.get("params") or {}).get("cloud"):
+                    continue
                 job = self._from_disk(raw)
                 if job is not None:
-                    if job.state == "queued" and not job.params.get("cloud"):
+                    if job.state == "queued":
                         job.stage = "queued"
                         job.progress = 0.0
                         job.current_step = 0
@@ -920,7 +828,7 @@ class VideoManager:
                         job.error = None
                         self._local_queue.append(job.job_id)
                         recovered_queued.append(job)
-                    elif job.state == "running" and not job.params.get("cloud"):
+                    elif job.state == "running":
                         job.state = "error"
                         job.stage = "interrupted"
                         job.error = "Local generation was interrupted by an app restart. Reuse its settings to queue a fresh local render."
@@ -940,8 +848,6 @@ class VideoManager:
 
     @staticmethod
     def _to_disk(job: VideoJob) -> dict:
-        durable_params = {k: v for k, v in job.params.items()
-                          if k not in ("image_data_uri", "provider_params")}
         return {
             "job_id": job.job_id,
             "mode": job.mode,
@@ -950,14 +856,13 @@ class VideoManager:
             "progress": job.progress,
             "current_step": job.current_step,
             "total_steps": job.total_steps,
-            "params": durable_params,
+            "params": job.params,
             "output_path": job.output_path,
             "resolved_seed": job.resolved_seed,
             "error": job.error,
             "media_info": job.media_info,
             "started_at": job.started_at,
             "finished_at": job.finished_at,
-            "cloud_state": job.cloud_state,
         }
 
     @staticmethod
@@ -993,7 +898,6 @@ class VideoManager:
                 media_info=media_info,
                 started_at=raw.get("started_at"),
                 finished_at=raw.get("finished_at"),
-                cloud_state=raw.get("cloud_state"),
             )
         except Exception:
             return None

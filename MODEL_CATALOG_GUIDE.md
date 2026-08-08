@@ -20,8 +20,9 @@ Use these terms consistently:
   against the Hugging Face repository rather than guessing from parameter count.
 - **Memory floor**: minimum unified memory for a practical load, not the model's
   download size. Leave room for macOS, text encoders, activations, and the UI.
-- **Runtime**: all current local families use PyTorch, Diffusers, and MPS. They
-  are not MLX models and must not be labeled as MLX-optimized.
+- **Runtime**: Lance uses its native MLX runtime. The remaining current families
+  use PyTorch, Diffusers, and MPS. Label a model as MLX-optimized only when its
+  end-to-end runtime actually uses MLX.
 
 The Models tab automatically groups variants by `family`, computes family mode,
 resolution, duration, download, and RAM summaries, and keeps every family

@@ -17,7 +17,6 @@ Serves:
 - `/api/generate/video2video`        → start an image-to-video or video-to-video generation
 - `/api/generate/jobs`               → list generation jobs
 - `/api/generate/jobs/{id}`          → poll one job
-- `/api/generate/jobs/{id}/repair`   → re-attach a saved cloud provider task
 - `/api/generate/jobs/{id}/video`    → fetch the rendered mp4
 - `/api/generate/jobs/{id}/cancel`   → cancel a running job
 - `/api/generate/history/{id}`       → delete one finished clip + its file
@@ -33,7 +32,6 @@ import os
 import socket
 import subprocess
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -46,8 +44,6 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from . import cache, catalog, memory_policy, settings as app_settings, storage_policy
-from . import spend, cloud_jobs
-from .providers import registry as providers_registry
 from .downloads import manager
 from .video import OUTPUT_DIR, manager as gen_manager, diagnostics as gen_diagnostics, model_pipeline_available
 from .restart_health import restart_rate_snapshot
@@ -79,17 +75,7 @@ APP_VERSION = _read_app_version()
 
 # ───────────── FastAPI setup ─────────────
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    providers_registry.start_catalog_sync()
-    resumed = cloud_jobs.resume_inflight()
-    cloud_jobs.start_repair_watchdog()
-    if resumed:
-        print(f"[cloud] resumed {resumed} in-flight job(s)", flush=True)
-    yield
-
-
-app = FastAPI(title="Video Studio KH", version=APP_VERSION, lifespan=lifespan)
+app = FastAPI(title="Video Studio KH", version=APP_VERSION)
 
 # Permissive CORS so the main mac can call the mac mini over LAN.
 app.add_middleware(
@@ -171,14 +157,6 @@ class TokenTestBody(BaseModel):
     hf_token: Optional[str] = None   # if omitted, tests the currently-saved token
 
 
-class ProviderKeyBody(BaseModel):
-    key: Optional[str] = Field(None, max_length=500)   # "" / null clears
-
-
-class ProviderPaidBody(BaseModel):
-    paid: bool
-
-
 class Txt2VideoBody(BaseModel):
     repo: str = Field(max_length=500)
     prompt: str = Field(max_length=20000)
@@ -190,19 +168,11 @@ class Txt2VideoBody(BaseModel):
     steps: Optional[int] = Field(None, ge=1, le=200)
     guidance: Optional[float] = Field(None, ge=0.0, le=30.0)
     seed: Optional[int] = Field(None, ge=-1, le=4294967295)
-    # Cloud-provider knobs (ignored by the local engine). Cloud models bill by
-    # duration, so `duration` also drives the cost estimate/guardrail.
-    duration: Optional[float] = Field(None, ge=0.1, le=60)
-    aspect_ratio: Optional[str] = Field(None, max_length=16)
-    resolution: Optional[str] = Field(None, max_length=16)
-    provider_params: Optional[dict] = None
-
-
 def _automatic_update_blockers() -> list[str]:
     reasons: list[str] = []
     generation_states = {str(job.state) for job in gen_manager.list_jobs()}
     if generation_states & {"queued", "running", "cancelling"}:
-        reasons.append("a local or cloud video generation is queued or running")
+        reasons.append("a local video generation is queued or running")
     download_states = {str(job.state) for job in manager.list_jobs()}
     if download_states & {"queued", "running", "paused", "cancelling"}:
         reasons.append("a model download is active")
@@ -356,18 +326,13 @@ def system_hardware() -> dict:
 @app.get("/api/catalog")
 def get_catalog() -> dict:
     families = {fid: catalog.serialize_family(f) for fid, f in catalog.FAMILIES.items()}
-    families.update(providers_registry.cloud_families())
     models = []
     for m in catalog.CATALOG:
         d = catalog.serialize_model(m)
         d["cache"] = cache.status_snapshot(m.repo, m.aliases)
         active = manager.active_for_repo(m.repo)
         d["active_download"] = active.serialize() if active else None
-        d["is_cloud"] = False
         models.append(d)
-    # Cloud models (fal, …) appear in the same unified catalog. They carry
-    # is_cloud=true + hub_modality=video so the Hub slots them into its cloud lane.
-    models.extend(providers_registry.cloud_models_serialized())
     return {"families": families, "models": models}
 
 
@@ -596,61 +561,6 @@ def test_hf_token_endpoint(body: TokenTestBody) -> dict:
         raise HTTPException(status_code=400, detail=f"Token validation failed: {e}")
 
 
-# ───────────── API: cloud providers + spend ─────────────
-
-@app.get("/api/providers")
-def list_providers() -> dict:
-    """Linked cloud video providers: key-set state, paid toggle, model count,
-    and per-provider spend vs caps. Never returns raw API keys."""
-    return {"providers": providers_registry.providers_status()}
-
-
-@app.post("/api/providers/{key}/key")
-def set_provider_key(key: str, body: ProviderKeyBody) -> dict:
-    """Set (or clear, with "") a provider's API key. Owner-only; stored in the
-    chmod-0600 settings file and never returned."""
-    try:
-        providers_registry.set_key(key, body.key)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"unknown provider: {key}")
-    return {"providers": providers_registry.providers_status()}
-
-
-@app.post("/api/providers/{key}/paid")
-def set_provider_paid(key: str, body: ProviderPaidBody) -> dict:
-    """Enable/disable paid (real-money) generation for a provider. Off by
-    default — nothing bills until this is on AND a key is set."""
-    try:
-        providers_registry.set_paid(key, body.paid)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"unknown provider: {key}")
-    return {"providers": providers_registry.providers_status()}
-
-
-@app.post("/api/providers/{key}/refresh")
-def refresh_provider(key: str) -> dict:
-    """Refresh a provider's live/curated model catalog and persistent cache."""
-    try:
-        n = providers_registry.refresh(key)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"unknown provider: {key}")
-    return {"provider": key, "model_count": n}
-
-
-@app.get("/api/spend")
-def get_spend() -> dict:
-    """Cloud spend today/this-month vs caps (global + per provider), plus recent records."""
-    return spend.summary()
-
-
-@app.post("/api/spend/caps")
-def set_spend_caps(body: dict) -> dict:
-    """Set spend caps. Body: {"global":{"daily","monthly"},"per_provider":{prov:{...}}}.
-    0 = no cap. Enforced together with the tighter cap winning."""
-    spend.set_caps(body)
-    return spend.summary()
-
-
 # ───────────── API: reveal in OS file manager ─────────────
 
 _APP_ROOT = Path(__file__).resolve().parent.parent      # .../app
@@ -791,32 +701,10 @@ def _validate_uploaded_media(path: Path, mode: str) -> None:
         raise HTTPException(status_code=422, detail="Input video must be at most 60 seconds, 60 FPS, and 3600 frames.")
 
 
-def _start_cloud(params: dict, mode: str) -> dict:
-    """Shared cloud dispatch for both generate routes. Translates the gateway's
-    exceptions into HTTP: no key → 400, cap exceeded → 402, unknown model → 400."""
-    try:
-        job, est = cloud_jobs.start_cloud_generation(mode, params)
-    except cloud_jobs.NoProviderKey as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except cloud_jobs.PaidUseDisabled as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except spend.CapExceeded as e:
-        raise HTTPException(status_code=402, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    out = job.serialize()
-    out["estimate_usd"] = est
-    return {"job": out}
-
-
 @app.post("/api/generate/txt2video")
 def start_txt2video(body: Txt2VideoBody) -> dict:
     if not body.prompt.strip():
         raise HTTPException(status_code=400, detail="prompt is required")
-    if providers_registry.is_cloud_id(body.repo):
-        return _start_cloud(body.model_dump(), "txt2video")
     model = _require_engine_and_cache(body.repo)
     if "txt2video" not in model.capabilities:
         raise HTTPException(
@@ -844,9 +732,6 @@ async def start_video2video(
     guidance: Optional[float] = Form(None),
     seed: Optional[int] = Form(None),
     strength: Optional[float] = Form(None),   # video2video only — distance from the input
-    duration: Optional[float] = Form(None),
-    resolution: Optional[str] = Form(None),
-    aspect_ratio: Optional[str] = Form(None),
 ) -> dict:
     """
     Image-to-video or video-to-video. multipart/form-data: a `file` (a still
@@ -857,16 +742,14 @@ async def start_video2video(
         raise HTTPException(status_code=400, detail="mode must be 'img2video' or 'video2video'")
     if not file or not file.filename:
         raise HTTPException(status_code=400, detail="an input file is required")
-    is_cloud = providers_registry.is_cloud_id(repo)
-    if not is_cloud:
-        model = _require_engine_and_cache(repo)
-        if mode not in model.capabilities:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{model.label} does not support {mode}. Supported: {', '.join(model.capabilities)}.",
-            )
-        if not model_pipeline_available(model, mode):
-            raise HTTPException(status_code=409, detail="This video pipeline is missing. Run Update or reinstall Generation.")
+    model = _require_engine_and_cache(repo)
+    if mode not in model.capabilities:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{model.label} does not support {mode}. Supported: {', '.join(model.capabilities)}.",
+        )
+    if not model_pipeline_available(model, mode):
+        raise HTTPException(status_code=409, detail="This video pipeline is missing. Run Update or reinstall Generation.")
     if len(repo) > 500 or len(prompt) > 20000 or len(negative_prompt) > 20000:
         raise HTTPException(status_code=422, detail="repo and prompts exceed the supported length")
 
@@ -875,16 +758,10 @@ async def start_video2video(
         "frames": (frames, 1, 513), "fps": (fps, 1, 60),
         "steps": (steps, 1, 200), "guidance": (guidance, 0.0, 30.0),
         "seed": (seed, -1, 4294967295), "strength": (strength, 0.0, 1.0),
-        "duration": (duration, 0.1, 60.0),
     }
     for name, (value, low, high) in numeric_limits.items():
         if value is not None and not low <= value <= high:
             raise HTTPException(status_code=422, detail=f"{name} must be between {low} and {high}")
-    if resolution is not None and len(resolution) > 16:
-        raise HTTPException(status_code=422, detail="resolution exceeds the supported length")
-    if aspect_ratio is not None and len(aspect_ratio) > 16:
-        raise HTTPException(status_code=422, detail="aspect_ratio exceeds the supported length")
-
     # Persist the upload so the worker can load it by path.
     uploads_dir = Path(__file__).resolve().parent.parent / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -934,24 +811,11 @@ async def start_video2video(
         "guidance": guidance,
         "seed": seed,
         "strength": strength,
-        "duration": duration,
-        "resolution": resolution,
-        "aspect_ratio": aspect_ratio,
     }
     if mode == "img2video":
         params["image_path"] = str(saved.resolve())
     else:
         params["video_path"] = str(saved.resolve())
-
-    if is_cloud:
-        # Cloud providers take an image URL — pass the upload as a data URI so
-        # we don't need to host it. (video2video via cloud isn't wired yet.)
-        if mode == "img2video":
-            import base64
-            ext = suffix.lstrip(".") or "png"
-            b = saved.read_bytes()
-            params["image_data_uri"] = f"data:image/{ext};base64," + base64.b64encode(b).decode()
-        return _start_cloud(params, mode)
 
     job = gen_manager.start_video2video(params)
     return {"job": job.serialize()}
@@ -973,20 +837,6 @@ def get_generation_job(job_id: str) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     return {"job": job.serialize()}
-
-
-@app.post("/api/generate/jobs/{job_id}/repair")
-def repair_generation_job(job_id: str) -> dict:
-    """Re-attach polling to a saved provider task. This never submits a new task."""
-    try:
-        job, attached = cloud_jobs.repair_job(job_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="job not found")
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    return {"job": job.serialize(), "attached": attached,
-            "message": "Repair attached to the saved provider task." if attached
-                       else "The saved provider task is already being monitored."}
 
 
 @app.get("/api/generate/jobs/{job_id}/video")

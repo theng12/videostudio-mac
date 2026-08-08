@@ -206,7 +206,7 @@ CATALOG: tuple[ModelEntry, ...] = (
         ),
         use_cases=(
             ("good", "Actually local text-to-video on a 16 GB Apple Silicon Mac"),
-            ("good", "Fast square motion and composition previews before a cloud final"),
+            ("good", "Fast square motion and composition previews before a high-resolution final"),
             ("weak", "Native output is short; this release wires text-to-video only"),
             ("avoid", "Long clips above 25 frames; upstream reports quality failures at larger latent grids"),
         ),

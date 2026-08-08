@@ -7,7 +7,7 @@ def test_video_generation_blocks_automatic_update(monkeypatch):
     monkeypatch.setattr(main.gen_manager, "list_jobs", lambda: [SimpleNamespace(state="running")])
     monkeypatch.setattr(main.manager, "list_jobs", lambda: [])
     assert main._automatic_update_blockers() == [
-        "a local or cloud video generation is queued or running"
+        "a local video generation is queued or running"
     ]
 
 

@@ -49,7 +49,7 @@
         <div class="workspace-meta" aria-label="Current video workspace status">
           <div class="workspace-stat">
             <span>Model</span>
-            <strong x-text="selectedModel ? selectedModel.label + ' · ' + modelSourceLabel(selectedModel) : (selectableGenerationModels.length ? 'Choose a model' : 'No model ready')"></strong>
+            <strong x-text="selectedModel ? selectedModel.label + ' · Local' : (selectableGenerationModels.length ? 'Choose a model' : 'No model ready')"></strong>
           </div>
           <div class="workspace-stat mode-stat">
             <span>Mode</span>
@@ -57,30 +57,30 @@
           </div>
           <div class="workspace-stat">
             <span>Clip</span>
-            <strong x-text="selectedModel?.is_cloud ? Number(gen.duration || 0).toFixed(1) + ' sec' : (gen.fps ? (gen.frames / gen.fps).toFixed(1) + ' sec' : '—')"></strong>
+            <strong x-text="gen.fps ? (gen.frames / gen.fps).toFixed(1) + ' sec' : '—'"></strong>
           </div>
           <div class="workspace-stat">
             <span>Format</span>
-            <strong x-text="selectedModel?.is_cloud ? ((gen.resolution || 'provider default') + ' · ' + (gen.aspectRatio || 'auto')) : (gen.width + '×' + gen.height + ' · ' + gen.fps + ' FPS')"></strong>
+            <strong x-text="gen.width + '×' + gen.height + ' · ' + gen.fps + ' FPS'"></strong>
           </div>
           <div class="workspace-stat">
             <span>Frames / seed</span>
-            <strong x-text="selectedModel?.is_cloud ? 'provider managed' : (gen.frames + ' · ' + (gen.seed === -1 ? 'random' : gen.seed))"></strong>
+            <strong x-text="gen.frames + ' · ' + (gen.seed === -1 ? 'random' : gen.seed)"></strong>
           </div>
         </div>
       </header>
 
-      <!-- engine-not-installed banner (local models only; cloud still works) -->
-      <div class="banner warn" x-show="!gen.available && !anyCloudUsable">
+      <!-- engine-not-installed banner -->
+      <div class="banner warn" x-show="!gen.available">
         <strong>Video engine not installed.</strong>
         Click <em>Install Generation</em> in the Pinokio sidebar to install MLX + PyTorch/Diffusers,
-        then reload. You can still browse Models, start downloads, or link a cloud provider in Settings.
+        then reload. You can still browse Models or start downloads.
       </div>
 
       <!-- no usable models -->
       <div class="banner info" x-show="selectableGenerationModels.length === 0">
         No models ready yet. <a href="#" @click.prevent="tab='models'">Download</a> a local model
-        (start with <strong>Lance 3B MLX</strong> on a 16 or 24 GB Mac), or link a <a href="#" @click.prevent="tab='settings'">cloud provider</a> in Settings.
+        (start with <strong>Lance 3B MLX</strong> on a 16 or 24 GB Mac).
       </div>
 
       <div class="gen-grid">
@@ -118,16 +118,15 @@
               <template x-for="group in generationModelGroups" :key="group.id">
                 <optgroup :label="group.label">
                   <template x-for="m in group.models" :key="m.repo">
-                    <option :value="m.repo" :disabled="m.is_cloud && !m.key_set" x-text="modelOptionLabel(m)"></option>
+                    <option :value="m.repo" x-text="modelOptionLabel(m)"></option>
                   </template>
                 </optgroup>
               </template>
             </select>
           </label>
           <div class="model-source-note" x-show="selectedModel" x-cloak>
-            <span class="model-source-badge" :class="selectedModel?.is_cloud ? 'cloud' : 'local'"
-                  x-text="modelSourceLabel(selectedModel)"></span>
-            <span x-text="selectedModel?.is_cloud ? 'Cloud API · no local download' : 'Local · runs on this Mac'"></span>
+            <span class="model-source-badge local">Local</span>
+            <span>Runs on this Mac</span>
           </div>
           <p class="hint" x-show="generationModels.length === 0">No ready model matches these filters.</p>
 
@@ -173,7 +172,7 @@
             Lance MLX uses its validated unconditional-guidance path and does not accept a separate negative prompt.
           </p>
 
-          <details class="advanced-controls" x-show="!selectedModel?.is_cloud">
+          <details class="advanced-controls">
             <summary>Advanced local controls</summary>
           <div class="grid2">
             <label class="field"><span>Frames</span>
@@ -194,29 +193,6 @@
               <input type="number" x-model.number="gen.strength" step="0.05" min="0" max="1" /></label>
           </div>
           </details>
-
-          <div class="grid2" x-show="selectedModel?.is_cloud" x-cloak>
-            <label class="field"><span>Duration</span>
-              <input type="number" x-model.number="gen.duration" min="0.1" :max="selectedModel?.max_duration_s || 60" step="0.5" /></label>
-            <label class="field" x-show="selectedModel?.resolutions?.length"><span>Resolution</span>
-              <select x-model="gen.resolution">
-                <template x-for="value in (selectedModel?.resolutions || [])" :key="value">
-                  <option :value="value" x-text="value"></option>
-                </template>
-              </select></label>
-            <label class="field" x-show="selectedModel?.aspect_ratios?.length"><span>Aspect ratio</span>
-              <select x-model="gen.aspectRatio">
-                <template x-for="value in (selectedModel?.aspect_ratios || [])" :key="value">
-                  <option :value="value" x-text="value"></option>
-                </template>
-              </select></label>
-          </div>
-
-          <div class="cost-estimate" x-show="selectedModel?.is_cloud" x-cloak>
-            <span>Estimated provider charge</span>
-            <strong x-text="estimatedCloudCost == null ? 'Price unavailable' : '$' + estimatedCloudCost.toFixed(4)"></strong>
-            <small>Checked against your spend caps before submission. Per-second jobs are reconciled from the downloaded clip duration.</small>
-          </div>
 
           <button class="primary big" :disabled="!canSubmit"
                   @click="submitGenerate()">
@@ -247,8 +223,6 @@
                 <span class="mode-tag" x-text="j.mode"></span>
                 <span class="mode-tag" x-show="j.queue_position" x-text="'queue #' + j.queue_position"></span>
                 <span class="spacer"></span>
-                <button class="link-btn" x-show="j.state==='error' && j.cloud_recovery?.recoverable"
-                        @click="repairJob(j.id)">repair saved task</button>
                 <button class="link-btn" x-show="j.state==='running' || j.state==='queued'"
                         @click="cancelJob(j.id)">cancel</button>
                 <button class="link-btn" x-show="j.state==='done' || j.state==='error' || j.state==='cancelled'"
@@ -268,20 +242,6 @@
               <div class="job-err" x-show="j.state==='error'">
                 <strong>Generation failed.</strong>
                 <details><summary>Technical details</summary><span x-text="j.error"></span></details>
-              </div>
-
-              <div class="hint" x-show="j.cloud_recovery?.task_id" x-cloak>
-                <span>Provider task <code x-text="j.cloud_recovery?.task_id"></code> is saved.</span>
-                <span x-show="j.cloud_recovery?.delayed && j.state!=='done'">
-                  It is taking longer than expected; Video Studio will keep checking without submitting again.
-                </span>
-                <span x-show="j.cloud_recovery?.status==='retrying' || j.cloud_recovery?.status==='result-retry'">
-                  Connection/result recovery is active and will retry automatically.
-                </span>
-              </div>
-              <div class="job-err" x-show="j.cloud_recovery?.submission_unknown" x-cloak>
-                The provider may have accepted this paid request, but no task ID came back.
-                Video Studio will not resubmit it. Check the provider dashboard before starting another job.
               </div>
 
               <div class="job-meta" x-show="j.state==='done'">
@@ -443,8 +403,8 @@
 
       <section class="family-library" x-show="filteredModelTotalCount>0">
         <div class="family-library-heading">
-          <div><span class="models-eyebrow">Choose where it runs</span><h2>Available models</h2></div>
-          <p>Local models stay on this Mac. Cloud models run through the named provider.</p>
+          <div><span class="models-eyebrow">Private local generation</span><h2>Available models</h2></div>
+          <p>Every model runs on this Mac after its weights are downloaded.</p>
         </div>
         <div class="model-lanes">
           <template x-for="lane in visibleModelLanes" :key="lane.id">
@@ -456,7 +416,7 @@
               <div class="family-stack">
           <template x-for="family in lane.families" :key="family.id">
             <article class="family-panel"
-                     :class="{'is-open': !isFamilyCollapsed(family.id), 'is-unlinked': family.is_cloud && !family.models.some((m) => m.key_set)}"
+                     :class="{'is-open': !isFamilyCollapsed(family.id)}"
                      :style="familyStyle(family)">
               <button class="family-panel-trigger" @click="toggleFamilyCollapsed(family.id)">
                 <span class="family-monogram" x-text="family.monogram || family.label.slice(0, 3)"></span>
@@ -465,8 +425,6 @@
                     <strong x-text="family.label"></strong>
                     <span class="family-recommended" x-show="family.id==='lance-mlx'">16 / 24 GB pick</span>
                     <span class="family-cached" x-show="family.cachedCount" x-text="family.cachedCount + ' downloaded'"></span>
-                    <span class="family-provider" x-show="family.is_cloud" x-text="providerName(family.provider)"></span>
-                    <span class="family-key-needed" x-show="family.is_cloud && !family.models.some((m) => m.key_set)">API key required</span>
                   </span>
                   <span class="family-summary" x-text="family.summary"></span>
                   <span class="family-facts">
@@ -474,10 +432,9 @@
                     <span x-text="familyModeSummary(family)"></span>
                     <span x-text="familyResolutionSummary(family)"></span>
                     <span x-text="familyDurationSummary(family)"></span>
-                    <span x-show="!family.is_cloud" x-text="familySizeSummary(family) + ' download'"></span>
-                    <span x-show="!family.is_cloud" x-text="familyRamSummary(family) + ' RAM'"></span>
-                    <span x-show="!family.is_cloud" x-text="family.models.some((m) => m.engine?.startsWith('mlx')) ? 'Native MLX' : 'PyTorch · MPS'"></span>
-                    <span x-show="family.is_cloud" x-text="family.models.some((m) => m.key_set) ? 'API key linked' : 'Unavailable until linked'"></span>
+                    <span x-text="familySizeSummary(family) + ' download'"></span>
+                    <span x-text="familyRamSummary(family) + ' RAM'"></span>
+                    <span x-text="family.models.some((m) => m.engine?.startsWith('mlx')) ? 'Native MLX' : 'PyTorch · MPS'"></span>
                   </span>
                 </span>
                 <span class="family-chevron" x-text="isFamilyCollapsed(family.id) ? '+' : '−'"></span>
@@ -487,8 +444,7 @@
                 <div class="family-guidance"><span>Family notes</span><p x-text="family.how_to_use"></p></div>
                 <div class="variant-table-head">
                   <span>Variant and modes</span><span>Clip profile</span>
-                  <span x-text="family.is_cloud ? 'Price' : 'Download'"></span>
-                  <span x-text="family.is_cloud ? 'Runtime' : 'Memory'"></span><span></span>
+                  <span>Download</span><span>Memory</span><span></span>
                 </div>
                 <div class="variant-list">
                   <template x-for="m in family.models" :key="m.repo">
@@ -496,12 +452,9 @@
                       <div class="variant-identity">
                         <div class="variant-title-line">
                           <h3 x-text="m.variant_label || m.label"></h3>
-                          <span class="variant-source local" x-show="!m.is_cloud">Local</span>
+                          <span class="variant-source local">Local</span>
                           <span class="variant-source mlx" x-show="m.engine?.startsWith('mlx')">MLX</span>
-                          <span class="variant-role" x-text="m.role" x-show="m.role && !m.is_cloud"></span>
-                          <span class="variant-source cloud" x-show="m.is_cloud" x-text="providerName(m.provider)"></span>
-                          <span class="variant-role" x-show="m.status==='new'">New</span>
-                          <span class="gated" x-show="m.status==='deprecated'">Deprecated</span>
+                          <span class="variant-role" x-text="m.role" x-show="m.role"></span>
                           <span class="gated" x-show="m.gated">Gated</span>
                         </div>
                         <div class="variant-capabilities">
@@ -512,39 +465,19 @@
                         <strong x-text="modelResolution(m)"></strong><small x-text="modelClipProfile(m)"></small>
                       </div>
                       <div class="variant-spec" data-label="Download">
-                        <template x-if="!m.is_cloud">
-                          <div><strong x-text="formatGb(m.size_gb)"></strong><small x-text="cacheChipLabel(m.cache.state)"></small></div>
-                        </template>
-                        <template x-if="m.is_cloud">
-                          <div><strong x-text="cloudPriceLabel(m)"></strong><small x-text="cloudStatusLabel(m)"></small></div>
-                        </template>
+                        <div><strong x-text="formatGb(m.size_gb)"></strong><small x-text="cacheChipLabel(m.cache.state)"></small></div>
                       </div>
                       <div class="variant-spec" data-label="Memory">
-                        <template x-if="!m.is_cloud">
-                          <div><strong x-text="m.min_unified_memory_gb + ' GB+'"></strong>
+                        <div><strong x-text="m.min_unified_memory_gb + ' GB+'"></strong>
                           <span class="fit-dot" :class="'fit-' + fitFor(m.min_unified_memory_gb).state"
                                 :title="fitFor(m.min_unified_memory_gb).hint" x-text="fitChipLabel(fitFor(m.min_unified_memory_gb))"></span></div>
-                        </template>
-                        <template x-if="m.is_cloud">
-                          <div><strong x-text="providerName(m.provider)"></strong><small>cloud · no local RAM</small></div>
-                        </template>
                       </div>
                       <div class="variant-action">
-                        <template x-if="!m.is_cloud">
-                          <div>
-                            <button class="primary" x-show="m.cache.state!=='cached' && !m.active_download" @click="startDownload(m.repo)">Download</button>
-                            <button class="ghost" x-show="m.active_download" @click="cancelDownload(m.active_download.id)">Cancel</button>
-                            <button class="primary" x-show="m.cache.state==='cached'" @click="useInGenerate(m.repo)">Use model</button>
-                          </div>
-                        </template>
-                        <template x-if="m.is_cloud">
-                          <div>
-                            <button class="primary" x-show="m.key_set && m.paid_on" @click="useInGenerate(m.repo)">Use model</button>
-                            <button class="ghost" x-show="!m.key_set" @click="tab='settings'"
-                                    :title="'Add a ' + providerName(m.provider) + ' API key in Settings'">Add API key</button>
-                            <button class="ghost" x-show="m.key_set && !m.paid_on" @click="tab='settings'">Enable paid use</button>
-                          </div>
-                        </template>
+                        <div>
+                          <button class="primary" x-show="m.cache.state!=='cached' && !m.active_download" @click="startDownload(m.repo)">Download</button>
+                          <button class="ghost" x-show="m.active_download" @click="cancelDownload(m.active_download.id)">Cancel</button>
+                          <button class="primary" x-show="m.cache.state==='cached'" @click="useInGenerate(m.repo)">Use model</button>
+                        </div>
                       </div>
                       <div class="variant-progress" x-show="m.active_download">
                         <div class="progress"><div class="bar" :style="`width:${Math.round(m.active_download?.percent||0)}%`"></div></div>
@@ -566,8 +499,6 @@
                           <span class="engine-ready" x-show="m.cache.state==='cached' && isModelReady(m.repo)">Engine ready</span>
                           <span class="engine-missing" x-show="m.cache.state==='cached' && !isModelReady(m.repo)"
                                 :title="'Missing: ' + (modelMissingDeps(m.repo)||[]).join(', ')">Generation engine needs installation</span>
-                          <span class="cloud-ready" x-show="m.is_cloud && m.key_set" x-text="cloudAccessLabel(m)"></span>
-                          <span class="cloud-missing" x-show="m.is_cloud && !m.key_set" x-text="cloudAccessLabel(m)"></span>
                           <code x-text="m.repo"></code>
                           <button class="link-btn" x-show="m.cache.state==='cached' && m.cache.path" @click="revealInFolder(m.cache.path)">Reveal in Finder</button>
                         </div>
@@ -632,10 +563,10 @@
         <div class="auto-update-actions"><button class="primary" @click="saveMemoryPolicy()" :disabled="memoryPolicy.busy || !memoryPolicy.dirty" x-text="memoryPolicy.busy ? 'Working…' : 'Save mode'"></button><span class="auto-update-unsaved" x-show="memoryPolicy.dirty">Unsaved changes</span><span class="auto-update-action-spacer"></span><button class="ghost" @click="releaseMemory()" :disabled="memoryPolicy.busy">Release Memory / Unload Model</button></div>
         <p class="auto-update-message" x-show="memoryPolicy.message" :class="memoryPolicy.messageKind" x-text="memoryPolicy.message"></p>
         <div class="auto-update-status-grid"><div><span>Current mode</span><strong x-text="memoryPolicy.mode.replace('_',' ')"></strong></div><div><span>Local pipeline</span><strong x-text="memoryPipelineLabel()"></strong></div><div><span>Next release</span><strong x-text="memoryPolicy.next_release_at ? memoryPolicyTime(memoryPolicy.next_release_at) : (memoryPolicy.mode==='performance' ? 'Manual only' : 'After next local render')"></strong></div><div><span>Last release</span><strong x-text="memoryPolicyTime(memoryPolicy.last_release_at)"></strong></div><div><span>Release count</span><strong x-text="memoryPolicy.release_count || 0"></strong></div><div><span>Activity Monitor</span><strong x-text="memoryPolicy.process_title || 'Video Studio Mac'"></strong></div></div>
-        <p class="hint">Cloud generations are not affected. Downloaded weights and output videos stay on disk; failed or cancelled local renders still release their pipeline for safety.</p>
+        <p class="hint">Downloaded weights and output videos stay on disk; failed or cancelled local renders still release their pipeline for safety.</p>
       </div>
       <div class="card settings-card auto-update-card" x-show="autoUpdate.loaded" x-cloak>
-        <div class="auto-update-head"><div><h3>Automatic updates</h3><p class="hint">Optional, recoverable updates that wait for local and cloud video jobs and model downloads to finish.</p></div><span class="auto-update-state" :class="autoUpdate.state" x-text="autoUpdate.state"></span></div>
+        <div class="auto-update-head"><div><h3>Automatic updates</h3><p class="hint">Optional, recoverable updates that wait for local video jobs and model downloads to finish.</p></div><span class="auto-update-state" :class="autoUpdate.state" x-text="autoUpdate.state"></span></div>
         <fieldset class="auto-update-mode-group" @change="markAutoUpdateDirty()">
           <legend>Choose how updates work</legend>
           <div class="auto-update-mode-options">
@@ -650,7 +581,7 @@
             <label><span>Frequency</span><select x-model="autoUpdate.draft.frequency" @change="markAutoUpdateDirty()" :disabled="autoUpdate.draft.mode==='off'"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
             <label><span>Maintenance time</span><select x-model.number="autoUpdate.draft.maintenance_hour" @change="markAutoUpdateDirty()" :disabled="autoUpdate.draft.mode==='off'"><template x-for="hour in 24" :key="hour-1"><option :value="hour-1" x-text="String(hour-1).padStart(2,'0') + ':00'"></option></template></select></label>
           </div>
-          <label class="auto-update-toggle"><input type="checkbox" x-model="autoUpdate.draft.idle_only" @change="markAutoUpdateDirty()" :disabled="autoUpdate.draft.mode==='off'"><span><strong>Wait until Video Studio is idle</strong><small>Recommended. Active paid cloud and local renders are never interrupted.</small></span></label>
+          <label class="auto-update-toggle"><input type="checkbox" x-model="autoUpdate.draft.idle_only" @change="markAutoUpdateDirty()" :disabled="autoUpdate.draft.mode==='off'"><span><strong>Wait until Video Studio is idle</strong><small>Recommended. Active local renders are never interrupted.</small></span></label>
         </div>
         <div class="auto-update-actions"><button class="primary" @click="saveAutoUpdate()" :disabled="autoUpdate.busy || !autoUpdate.dirty" x-text="autoUpdate.busy ? 'Saving…' : 'Save changes'"></button><span class="auto-update-unsaved" x-show="autoUpdate.dirty">Unsaved changes</span><span class="auto-update-action-spacer"></span><button class="ghost" @click="autoUpdateAction('check')" :disabled="autoUpdate.busy">Check now</button><button class="ghost" x-show="autoUpdate.update_available" @click="autoUpdateAction('update')" :disabled="autoUpdate.busy">Update now</button><button class="ghost" x-show="autoUpdate.update_available" @click="autoUpdateAction('update',{after_current:true})" :disabled="autoUpdate.busy">Update after current work</button><button class="ghost" x-show="autoUpdate.state==='failed'" @click="autoUpdateAction('retry')" :disabled="autoUpdate.busy">Retry</button></div>
         <p class="auto-update-message" x-show="autoUpdate.message" :class="autoUpdate.messageKind" x-text="autoUpdate.message"></p>
@@ -673,73 +604,6 @@
           <span class="settings-msg" :class="settings.messageKind" x-text="settings.message"></span>
         </div>
         <p class="hint" x-show="settings.hf_token_set">A token is currently saved (<span x-text="settings.hf_token_masked"></span>).</p>
-      </div>
-
-      <div class="card settings-card">
-        <h3>Cloud video providers</h3>
-        <p class="hint">Link a provider to expose its cloud video models in the catalog. Keys are stored locally (chmod 0600) and never shown. Generation only bills when a key is set <strong>and</strong> paid is enabled.</p>
-        <template x-for="p in providers" :key="p.key">
-          <div style="border-top:1px solid var(--border,#2a2f3a);padding:12px 0;">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <strong x-text="p.name"></strong>
-              <span class="variant-role" x-text="p.model_count + ' models'"></span>
-              <span class="variant-role" x-show="p.key_set" style="color:#3fb950">key set</span>
-              <span class="variant-role" x-show="p.paid" style="color:#e0a83a">paid on</span>
-              <a class="link-accent" :href="p.docs_url" target="_blank" style="margin-left:auto">models ↗</a>
-            </div>
-            <div class="token-row" style="margin-top:8px">
-              <input type="password" x-model="providerKeyInput[p.key]" :placeholder="p.key_set ? '•••••• saved — paste to replace' : 'API key'">
-              <button type="button" class="ghost" :disabled="!!providerSaving[p.key]"
-                      @click.prevent="saveProviderKey(p.key)"
-                      x-text="providerSaving[p.key] ? 'Saving…' : 'Save'"></button>
-            </div>
-            <div class="settings-actions" style="margin-top:8px">
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-                <input type="checkbox" :checked="p.paid" @change="toggleProviderPaid(p.key, $event.target.checked)"> Enable paid generation
-              </label>
-              <button class="link-btn" @click="refreshProvider(p.key)">Refresh models</button>
-              <span class="settings-msg" x-text="providerMsg[p.key] || ''"></span>
-            </div>
-            <p class="hint">Spend — today <b x-text="'$' + (p.spend?.today || 0).toFixed(2)"></b><span x-show="p.spend?.cap_daily"> / $<span x-text="(p.spend.cap_daily||0).toFixed(2)"></span></span> · month <b x-text="'$' + (p.spend?.month || 0).toFixed(2)"></b><span x-show="p.spend?.cap_monthly"> / $<span x-text="(p.spend.cap_monthly||0).toFixed(2)"></span></span></p>
-          </div>
-        </template>
-        <p class="hint" x-show="!providers.length">No providers available.</p>
-      </div>
-
-      <div class="card settings-card">
-        <h3>Spend guardrails</h3>
-        <p class="hint">Caps are USD and reset on the calendar (daily at midnight, monthly on the 1st). 0 = no cap. Per-provider and global caps are enforced together — the tighter one wins. A generation that would exceed a cap is blocked <em>before</em> it runs.</p>
-        <div class="settings-actions" style="flex-wrap:wrap;gap:12px">
-          <label class="field" style="max-width:140px"><span>Global daily $</span><input type="number" min="0" step="1" x-model.number="caps.global.daily"></label>
-          <label class="field" style="max-width:140px"><span>Global monthly $</span><input type="number" min="0" step="1" x-model.number="caps.global.monthly"></label>
-        </div>
-        <template x-for="p in providers" :key="'cap-' + p.key">
-          <div class="settings-actions" style="flex-wrap:wrap;gap:12px;margin-top:6px" x-show="capsProvider[p.key]">
-            <span style="min-width:56px;font-size:13px" x-text="p.name"></span>
-            <label class="field" style="max-width:130px"><span>Daily $</span><input type="number" min="0" step="1" x-model.number="capsProvider[p.key].daily"></label>
-            <label class="field" style="max-width:130px"><span>Monthly $</span><input type="number" min="0" step="1" x-model.number="capsProvider[p.key].monthly"></label>
-          </div>
-        </template>
-        <div class="settings-actions" style="margin-top:10px">
-          <button class="primary" @click="saveCaps()">Save caps</button>
-          <span class="settings-msg" :class="capsMsgKind" x-text="capsMsg"></span>
-        </div>
-        <p class="hint" x-show="spend">Total cloud spend — today <b x-text="'$' + ((spend?.global?.today) || 0).toFixed(2)"></b>, this month <b x-text="'$' + ((spend?.global?.month) || 0).toFixed(2)"></b>.</p>
-        <div class="spend-history" x-show="spend?.daily_history?.length" x-cloak>
-          <div class="spend-history-head">
-            <strong>Last 14 days</strong>
-            <span>Estimate until completion · duration-reconciled where available</span>
-          </div>
-          <div class="spend-chart" aria-label="Cloud spend over the last 14 days">
-            <template x-for="day in (spend?.daily_history || [])" :key="day.day">
-              <div class="spend-day" :title="spendDayTitle(day)">
-                <span class="spend-value" x-text="day.total ? '$' + Number(day.total).toFixed(2) : ''"></span>
-                <div class="spend-bar-track"><div class="spend-bar" :style="`height:${Math.max(day.total ? 5 : 0, Number(day.total || 0) / spendHistoryMax * 100)}%`"></div></div>
-                <span class="spend-date" x-text="spendDayLabel(day.day)"></span>
-              </div>
-            </template>
-          </div>
-        </div>
       </div>
 
       <div class="card settings-card">

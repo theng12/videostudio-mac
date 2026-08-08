@@ -33,7 +33,6 @@ function studio() {
       negativePrompt: "",
       frames: 97, fps: 24, steps: 40, guidance: 3.0,
       width: 704, height: 480, seed: -1, strength: 0.7,
-      duration: 5, resolution: "", aspectRatio: "",
       inputFile: null, inputUrl: "", inputName: "",
       submitting: false,
     },
@@ -67,16 +66,6 @@ function studio() {
     },
     conn: { bind_port: 47872 },
 
-    // cloud providers + spend guardrails
-    providers: [],
-    spend: null,
-    providerKeyInput: {},
-    providerSaving: {},
-    providerMsg: {},
-    caps: { global: { daily: 0, monthly: 0 } },
-    capsProvider: {},
-    capsMsg: "", capsMsgKind: "info",
-
     toasts: [],
     _toastSeq: 0,
     _doneRepos: {},
@@ -98,16 +87,10 @@ function studio() {
 
     // ──────── Generate computed ────────
     get cachedModels() {
-      // Cloud models need no download, so keep them visible in Generate even
-      // before linking a key; the dropdown disables unlinked providers. Local
-      // models must be cached before they can appear here.
-      return this.models.filter((m) => m.is_cloud || (m.cache && m.cache.state === "cached"));
+      return this.models.filter((m) => m.cache && m.cache.state === "cached");
     },
     get selectableGenerationModels() {
       return this.generationModels.filter((m) => this.isModelSelectable(m));
-    },
-    get anyCloudUsable() {
-      return this.models.some((m) => m.is_cloud && m.key_set && m.paid_on);
     },
     get selectedModel() {
       return this.models.find((m) => m.repo === this.gen.repo) || null;
@@ -134,7 +117,7 @@ function studio() {
       const f = this.genFilters;
       return this.cachedModels.filter((m) => {
         if (f.capability !== "all" && !(m.capabilities || []).includes(f.capability)) return false;
-        const duration = m.is_cloud ? Number(m.max_duration_s || 0) : this.modelDurationSeconds(m);
+        const duration = this.modelDurationSeconds(m);
         if (Number(f.minDuration || 0) > 0 && duration < Number(f.minDuration)) return false;
         if (f.resolution !== "all") {
           const values = new Set(m.resolutions || []);
@@ -146,47 +129,9 @@ function studio() {
       });
     },
     get generationModelGroups() {
-      const groups = [];
-      const local = this.generationModels.filter((m) => !m.is_cloud);
-      if (local.length) groups.push({ id: "local", label: "Local · this Mac", models: local });
-      const byProvider = {};
-      for (const model of this.generationModels.filter((m) => m.is_cloud)) {
-        (byProvider[model.provider] ||= []).push(model);
-      }
-      for (const provider of Object.keys(byProvider).sort((a, b) => this.providerName(a).localeCompare(this.providerName(b)))) {
-        groups.push({ id: `cloud-${provider}`, label: `Cloud · ${this.providerName(provider)}`, models: byProvider[provider] });
-      }
-      return groups;
-    },
-    get estimatedCloudCost() {
-      const m = this.selectedModel;
-      if (!m?.is_cloud || !m.price || m.price.usd == null) return null;
-      if (m.price.unit === "per_second") return Math.round(Number(m.price.usd) * Number(this.gen.duration || 0) * 10000) / 10000;
-      if (m.price.unit === "per_video") return Number(m.price.usd);
-      return null;
-    },
-    get cloudCapBlockMessage() {
-      const m = this.selectedModel;
-      const estimate = this.estimatedCloudCost;
-      if (!m?.is_cloud || estimate == null) return "";
-      if (!this.spend) return "Loading spend guardrails…";
-      const global = this.spend.global || {};
-      const provider = (this.spend.per_provider || {})[m.provider] || {};
-      const checks = [
-        ["global daily", global.today, global.cap_daily],
-        ["global monthly", global.month, global.cap_monthly],
-        [`${m.provider} daily`, provider.today, provider.cap_daily],
-        [`${m.provider} monthly`, provider.month, provider.cap_monthly],
-      ];
-      for (const [label, current, cap] of checks) {
-        if (Number(cap || 0) > 0 && Number(current || 0) + estimate > Number(cap) + 1e-9) {
-          return `${label} cap blocks this job: $${Number(current || 0).toFixed(2)} spent + $${estimate.toFixed(4)} estimate exceeds $${Number(cap).toFixed(2)}.`;
-        }
-      }
-      return "";
-    },
-    get spendHistoryMax() {
-      return Math.max(0.01, ...(this.spend?.daily_history || []).map((d) => Number(d.total || 0)));
+      return this.generationModels.length
+        ? [{ id: "local", label: "Local · this Mac", models: this.generationModels }]
+        : [];
     },
 
     // ──────── lifecycle ────────
@@ -204,130 +149,19 @@ function studio() {
       this.refreshOutputStats();
       this.refreshStoragePolicy();
       await this.refreshMemoryPolicy(true, true);
-      this.loadProviders().then(() => this.loadSpend());
       setInterval(() => this.refreshHealth(), 8000);
       setInterval(() => this.loadDiagnostics(), 15000);
-      setInterval(() => { if (this.tab === "settings") this.loadSpend(); }, 15000);
       setInterval(() => {
         if (this.tab === "settings" || ["checking","updating","restarting","deferred"].includes(this.autoUpdate.state)) this.loadAutoUpdate(true);
         if (this.tab === "settings") this.refreshMemoryPolicy(true);
       }, 5000);
     },
 
-    // ──────── cloud providers + spend ────────
-    async loadProviders() {
-      try {
-        const d = await (await fetch("/api/providers")).json();
-        const providers = d.providers || [];
-        // Build every provider-keyed object before exposing the provider rows to
-        // Alpine. Otherwise x-for can render a row while capsProvider[p.key] is
-        // still undefined, which aborts expressions elsewhere in Settings.
-        const keyInput = { ...this.providerKeyInput };
-        const capsProvider = { ...this.capsProvider };
-        for (const p of providers) {
-          if (!(p.key in keyInput)) keyInput[p.key] = "";
-          if (!(p.key in capsProvider)) capsProvider[p.key] = { daily: 0, monthly: 0 };
-        }
-        this.providerKeyInput = keyInput;
-        this.capsProvider = capsProvider;
-        this.providers = providers;
-      } catch (_) {}
-    },
-    async loadSpend() {
-      try {
-        const d = await (await fetch("/api/spend")).json();
-        this.spend = d;
-        this.caps.global = { daily: d.caps?.global?.daily || 0, monthly: d.caps?.global?.monthly || 0 };
-        const pp = d.caps?.per_provider || {};
-        const cp = {};
-        for (const p of this.providers) { const v = pp[p.key] || {}; cp[p.key] = { daily: v.daily || 0, monthly: v.monthly || 0 }; }
-        this.capsProvider = cp;
-      } catch (_) {}
-    },
-    async saveProviderKey(key) {
-      const value = (this.providerKeyInput[key] || "").trim();
-      const existing = this.providers.find((p) => p.key === key);
-      if (!value) {
-        this.providerMsg = { ...this.providerMsg,
-          [key]: existing?.key_set ? "Paste a replacement key first." : "Paste an API key first." };
-        return;
-      }
-      this.providerSaving = { ...this.providerSaving, [key]: true };
-      this.providerMsg = { ...this.providerMsg, [key]: "Saving…" };
-      try {
-        const r = await fetch(`/api/providers/${key}/key`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: value }) });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
-        this.providers = d.providers || [];
-        this.providerKeyInput = { ...this.providerKeyInput, [key]: "" };
-        this.providerMsg = { ...this.providerMsg, [key]: "Key saved." };
-        this.pushToast(`Saved ${key} key`, "success");
-        this.loadCatalog();
-      } catch (e) {
-        this.providerMsg = { ...this.providerMsg, [key]: "Save failed: " + e };
-        this.pushToast("Save failed: " + e, "error");
-      } finally {
-        this.providerSaving = { ...this.providerSaving, [key]: false };
-      }
-    },
-    async toggleProviderPaid(key, on) {
-      this.providerMsg = { ...this.providerMsg, [key]: "Updating…" };
-      try {
-        const r = await fetch(`/api/providers/${key}/paid`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paid: on }) });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
-        this.providers = d.providers || [];
-        this.providerMsg = { ...this.providerMsg, [key]: on ? "Paid generation enabled." : "Paid generation disabled." };
-        this.loadCatalog();
-      } catch (e) {
-        this.providerMsg = { ...this.providerMsg, [key]: "Update failed: " + e };
-        this.pushToast("Update failed: " + e, "error");
-        await this.loadProviders();
-      }
-    },
-    async refreshProvider(key) {
-      try {
-        const d = await (await fetch(`/api/providers/${key}/refresh`, { method: "POST" })).json();
-        this.pushToast(`${key}: ${d.model_count} models`, "info");
-        await this.loadProviders(); this.loadCatalog();
-      } catch (e) { this.pushToast("Refresh failed: " + e, "error"); }
-    },
-    async saveCaps() {
-      try {
-        const body = { global: this.caps.global, per_provider: this.capsProvider };
-        const d = await (await fetch("/api/spend/caps", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
-        this.spend = d; this.capsMsg = "Saved"; this.capsMsgKind = "success"; this.loadProviders();
-        setTimeout(() => { this.capsMsg = ""; }, 2500);
-      } catch (e) { this.capsMsg = "Save failed"; this.capsMsgKind = "error"; }
-    },
-    cloudPriceLabel(m) {
-      if (!m.price || m.price.usd == null) return "usage-based";
-      return "$" + m.price.usd + (m.price.unit === "per_second" ? "/sec" : "/video");
-    },
-    cloudStatusLabel(m) {
-      return m.status === "deprecated" ? "deprecated" : (m.status === "new" ? "new" : "cloud");
-    },
-    providerName(key) {
-      const linked = this.providers.find((p) => p.key === key)?.name;
-      if (linked) return linked;
-      const family = Object.values(this.families || {}).find((f) => f.provider === key);
-      return String(family?.label || key || "Cloud").replace(/\s*·\s*cloud$/i, "");
-    },
-    modelSourceLabel(model) {
-      return model?.is_cloud ? this.providerName(model.provider) : "Local";
-    },
     modelOptionLabel(model) {
-      const access = model.is_cloud && !model.key_set ? " · API key required" : "";
-      return `${model.label} · ${this.modelSourceLabel(model)}${access}`;
+      return `${model.label} · Local`;
     },
     isModelSelectable(model) {
-      return !!model && (!model.is_cloud || !!model.key_set);
-    },
-    cloudAccessLabel(model) {
-      if (!model?.is_cloud) return "Local model";
-      if (!model.key_set) return `Add ${this.providerName(model.provider)} API key`;
-      if (!model.paid_on) return `Enable ${this.providerName(model.provider)} paid use`;
-      return `${this.providerName(model.provider)} ready`;
+      return !!model;
     },
 
     async refreshHealth() {
@@ -353,8 +187,13 @@ function studio() {
     async loadCatalog() {
       try {
         const data = await (await fetch("/api/catalog")).json();
-        this.families = data.families || {};
-        this.models = data.models || [];
+        // An older backend may remain live until its next normal restart.
+        // Never surface its retired hosted catalog through the local-only UI.
+        this.models = (data.models || []).filter((model) => !model.is_cloud);
+        const localFamilyIds = new Set(this.models.map((model) => model.family));
+        this.families = Object.fromEntries(
+          Object.entries(data.families || {}).filter(([id]) => localFamilyIds.has(id)),
+        );
         this._initFamilyLibrary();
         this._syncDownloadsToModels();
         if (!this.selectableGenerationModels.some((m) => m.repo === this.gen.repo)) {
@@ -523,7 +362,7 @@ function studio() {
       const fits = (m) => this.fitFor(m.min_unified_memory_gb).state !== "risky";
       const heavy = (m) => (Number(m.min_unified_memory_gb) || 0) * 1000 + (Number(m.size_gb) || 0);
       const hasCap = (m, c) => (m.capabilities || []).includes(c);
-      const localModels = this.models.filter((m) => !m.is_cloud);
+      const localModels = this.models;
       const pickHeavy = (pred) => {
         const c = localModels.filter((m) => fits(m) && pred(m));
         return c.length ? c.slice().sort((a, b) => heavy(b) - heavy(a))[0] : null;
@@ -560,7 +399,7 @@ function studio() {
           const caps = new Set(m.capabilities || []);
           for (const want of f.capabilities) if (!caps.has(want)) return false;
         }
-        if (!m.is_cloud && f.fitLevel && f.fitLevel !== "all") {
+        if (f.fitLevel && f.fitLevel !== "all") {
           const st = this.fitFor(m.min_unified_memory_gb).state;
           if (f.fitLevel === "ok" && st !== "ok") return false;
           if (f.fitLevel === "tight" && st !== "tight") return false;
@@ -569,7 +408,7 @@ function studio() {
         if (q) {
           const useCases = (m.use_cases || []).map((item) => item.text || "").join(" ");
           const hay = [m.label, m.variant_label, m.role, m.repo, m.family_label, m.best_for,
-            m.is_cloud ? this.providerName(m.provider) : "local", useCases]
+            "local", useCases]
             .filter(Boolean).join(" ").toLowerCase();
           if (!hay.includes(q)) return false;
         }
@@ -622,20 +461,12 @@ function studio() {
       });
     },
     get visibleModelLanes() {
-      const groups = this.visibleFamilyGroups;
-      const lanes = [
-        {
-          id: "local", eyebrow: "Runs on this Mac", label: "Local models",
-          summary: "Downloaded once, rendered privately with this Mac's GPU and unified memory.",
-          families: groups.filter((family) => !family.is_cloud),
-        },
-        {
-          id: "cloud", eyebrow: "Runs on a provider", label: "Cloud models",
-          summary: "No download or local RAM required. Unlinked providers stay visible but unavailable until an API key is added.",
-          families: groups.filter((family) => family.is_cloud),
-        },
-      ];
-      return lanes.filter((lane) => lane.families.length);
+      const families = this.visibleFamilyGroups;
+      return families.length ? [{
+        id: "local", eyebrow: "Runs on this Mac", label: "Local models",
+        summary: "Downloaded once, rendered privately with this Mac's GPU and unified memory.",
+        families,
+      }] : [];
     },
     get hasActiveFilters() {
       const f = this.modelFilters;
@@ -723,41 +554,29 @@ function studio() {
       return min === max ? this.formatDuration(min) : `${this.formatDuration(min)}–${this.formatDuration(max)}`;
     },
     modelResolution(model) {
-      if (model.is_cloud) return (model.resolutions || []).join(", ") || "Provider default";
       const d = model.video_defaults || {};
       return d.width && d.height ? `${d.width}×${d.height}` : "Custom";
     },
     modelDurationSeconds(model) {
-      if (model.is_cloud) return Number(model.max_duration_s || 0);
       const d = model.video_defaults || {};
       return d.frames && d.fps ? Number(d.frames) / Number(d.fps) : 0;
     },
     formatDuration(seconds) {
       return seconds >= 10 ? `${Math.round(seconds)} sec` : `${seconds.toFixed(1)} sec`;
     },
-    spendDayLabel(day) {
-      return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    },
-    spendDayTitle(day) {
-      const parts = Object.entries(day.providers || {}).map(([provider, usd]) => `${provider}: $${Number(usd).toFixed(4)}`);
-      return `${day.day} · $${Number(day.total || 0).toFixed(4)}${parts.length ? " · " + parts.join(" · ") : ""}`;
-    },
     modelClipProfile(model) {
-      if (model.is_cloud) return `${this.formatDuration(this.modelDurationSeconds(model))} max · provider managed`;
       const d = model.video_defaults || {};
       return `${this.formatDuration(this.modelDurationSeconds(model))} · ${d.frames || "—"} frames · ${d.fps || "—"} fps`;
     },
     modelRuntimeLabel(model) {
-      if (model.is_cloud) return `${this.providerName(model.provider)} · Cloud API`;
       return model.engine?.startsWith("mlx")
         ? "Local · Native MLX · Apple Silicon"
         : "Local · PyTorch · MPS";
     },
     modelRowClass(model) {
-      return [model.cache?.state || "absent", model.is_cloud ? "cloud" : "local",
+      return [model.cache?.state || "absent", "local",
         model.engine?.startsWith("mlx") ? "mlx" : "",
-        model.is_cloud && !model.key_set ? "cloud-unlinked" : "",
-        !model.is_cloud && this.isModelReady(model.repo) ? "ready" : ""].filter(Boolean).join(" ");
+        this.isModelReady(model.repo) ? "ready" : ""].filter(Boolean).join(" ");
     },
     shortCapabilityLabel(c) {
       return { txt2video: "Text", img2video: "Image", video2video: "Video" }[c] || c;
@@ -784,7 +603,7 @@ function studio() {
     jobStageLabel(job) {
       if (job.state === "queued" && job.queue_position) return `queued #${job.queue_position}`;
       return ({ preparing: "preparing", loading: "loading model", generating: "generating frames",
-        encoding: "encoding video", provider: "provider processing", cancelling: "cancelling", interrupted: "interrupted",
+        encoding: "encoding video", cancelling: "cancelling", interrupted: "interrupted",
         completed: "completed", failed: "failed", cancelled: "cancelled" })[job.stage] || job.state;
     },
     onModelChange() { this.applyModelDefaults(); },
@@ -803,41 +622,22 @@ function studio() {
       this.gen.guidance = d.guidance ?? this.gen.guidance;
       this.gen.width = d.width ?? this.gen.width;
       this.gen.height = d.height ?? this.gen.height;
-      if (m.is_cloud) {
-        this.gen.duration = Math.min(Number(m.max_duration_s || 5), 5);
-        this.gen.resolution = (m.resolutions || [])[0] || "";
-        this.gen.aspectRatio = (m.aspect_ratios || [])[0] || "";
-      }
       if (!m.capabilities.includes(this.gen.mode)) this.gen.mode = m.capabilities[0];
     },
     frameHint() {
       const m = this.selectedModel; if (!m) return "";
-      if (m.is_cloud) {
-        if (this.estimatedCloudCost == null) return "This cloud model has no verified price and cannot be submitted yet.";
-        const reconciliation = m.price?.unit === "per_second"
-          ? "Final cost is reconciled from the downloaded clip duration."
-          : "This model uses a fixed per-video price.";
-        return `Estimated provider cost: $${this.estimatedCloudCost.toFixed(4)}. ${reconciliation}`;
-      }
       const base = this.modelFrameBase(m);
       return `Frames are rounded to ${base}·n+1 for this model. Bigger frames/steps = much longer generation.`;
     },
     get canSubmit() {
       if (this.gen.submitting || !this.gen.repo || !this.gen.prompt.trim()) return false;
-      if (this.selectedModel?.is_cloud) {
-        if (!this.selectedModel.key_set || !this.selectedModel.paid_on || this.estimatedCloudCost == null || this.cloudCapBlockMessage) return false;
-      } else if (!this.isModelReady(this.gen.repo)) return false;
+      if (!this.isModelReady(this.gen.repo)) return false;
       if (this.gen.mode !== "txt2video" && !this.gen.inputFile) return false;
       return true;
     },
     get submitHint() {
       if (!this.gen.repo) return "Choose a downloaded model.";
-      if (this.selectedModel?.is_cloud) {
-        if (!this.selectedModel.key_set) return "Add this provider's API key in Settings.";
-        if (!this.selectedModel.paid_on) return "Enable paid generation for this provider in Settings.";
-        if (this.estimatedCloudCost == null) return "This cloud model has no verified price and is blocked for safety.";
-        if (this.cloudCapBlockMessage) return this.cloudCapBlockMessage;
-      } else if (!this.isModelReady(this.gen.repo)) return "This model's video pipeline is not ready. Run Update or reinstall Generation.";
+      if (!this.isModelReady(this.gen.repo)) return "This model's video pipeline is not ready. Run Update or reinstall Generation.";
       if (!this.gen.prompt.trim()) return "Enter a prompt to continue.";
       if (this.gen.mode !== "txt2video" && !this.gen.inputFile) {
         return "Choose an input " + (this.gen.mode === "img2video" ? "image." : "video.");
@@ -878,9 +678,6 @@ function studio() {
               repo: this.gen.repo, prompt: this.gen.prompt, negative_prompt: this.gen.negativePrompt,
               width: this.gen.width, height: this.gen.height, frames: this.gen.frames,
               fps: this.gen.fps, steps: this.gen.steps, guidance: this.gen.guidance, seed: this.gen.seed,
-              duration: this.selectedModel?.is_cloud ? this.gen.duration : null,
-              resolution: this.selectedModel?.is_cloud ? (this.gen.resolution || null) : null,
-              aspect_ratio: this.selectedModel?.is_cloud ? (this.gen.aspectRatio || null) : null,
             }),
           });
         } else {
@@ -894,11 +691,6 @@ function studio() {
           fd.append("prompt", this.gen.prompt); fd.append("negative_prompt", this.gen.negativePrompt);
           fd.append("frames", this.gen.frames); fd.append("fps", this.gen.fps);
           fd.append("steps", this.gen.steps); fd.append("guidance", this.gen.guidance); fd.append("seed", this.gen.seed);
-          if (this.selectedModel?.is_cloud) {
-            fd.append("duration", this.gen.duration);
-            if (this.gen.resolution) fd.append("resolution", this.gen.resolution);
-            if (this.gen.aspectRatio) fd.append("aspect_ratio", this.gen.aspectRatio);
-          }
           if (this.gen.mode !== "video2video") { fd.append("width", this.gen.width); fd.append("height", this.gen.height); }
           else { fd.append("strength", this.gen.strength); }
           res = await fetch("/api/generate/video2video", { method: "POST", body: fd });
@@ -916,16 +708,6 @@ function studio() {
       }
     },
     async cancelJob(id) { try { await fetch(`/api/generate/jobs/${id}`, { method: "DELETE" }); } catch (_) {} },
-    async repairJob(id) {
-      try {
-        const r = await fetch(`/api/generate/jobs/${encodeURIComponent(id)}/repair`, { method: "POST" });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
-        this.pushToast(d.message || "Saved provider task repaired.", "success");
-      } catch (e) {
-        this.pushToast("Repair failed: " + e, "error");
-      }
-    },
     reuseJob(job) {
       const p = job.params || {};
       if (p.repo && this.models.some((m) => m.repo === p.repo)) this.gen.repo = p.repo;
@@ -935,8 +717,7 @@ function studio() {
       this.gen.negativePrompt = p.negative_prompt || "";
       for (const [target, source] of [["frames","frames"],["fps","fps"],["steps","steps"],
         ["guidance","guidance"],["width","width"],["height","height"],["seed","seed"],
-        ["strength","strength"],["duration","duration"],["resolution","resolution"],
-        ["aspectRatio","aspect_ratio"]]) {
+        ["strength","strength"]]) {
         if (p[source] !== null && p[source] !== undefined) this.gen[target] = p[source];
       }
       if (job.resolved_seed !== null && job.resolved_seed !== undefined) this.gen.seed = job.resolved_seed;

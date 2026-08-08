@@ -24,9 +24,9 @@ a standalone single-modality launcher.
 - **Video → Video** — restyle an existing clip guided by a prompt (CogVideoX).
 - **Model catalog + downloads** — browse, download, and manage Hugging Face
   weights with live progress; downloads are independent of generation.
-- **Clear local/cloud lanes** — the library and Generate selector show where
-  each model runs, which provider it uses, and whether an API key or paid-use
-  permission is still needed.
+- **Local model library** — the library and Generate selector expose only
+  models that run on this Mac. Video Studio does not load hosted providers,
+  provider credentials, billing controls, or remote generation routes.
 - **In-browser player** — generated `.mp4` clips play inline; download or reveal
   in Finder.
 
@@ -111,8 +111,8 @@ port).
 ## Optional automatic updates
 
 Settings includes a safe automatic updater that defaults to **Off**. Notify and
-Automatic modes can run daily or weekly, always waiting for local generations,
-paid cloud jobs, and model downloads to finish. “Update after current work”
+Automatic modes can run daily or weekly, always waiting for local generations
+and model downloads to finish. “Update after current work”
 retries until Video Studio is idle. Every update verifies the expected GitHub
 repository, clean fast-forward history, disk, dependencies, imports, health,
 and the running version; failed post-update verification triggers rollback.
@@ -124,17 +124,18 @@ Off unloads the schedule immediately.
 
 ## Local model memory
 
-Video Studio now keeps the most recent successful local MLX or Diffusers
-pipeline loaded by default so a repeat render with the same model starts
-faster. Settings offers three opt-in alternatives: **Balanced** unloads after
-10 idle minutes, **Memory Saver** after 2 minutes, and **Immediate** after every
-completed local render. **Performance** is the default.
+Video Studio can keep the most recent successful local MLX or Diffusers
+pipeline loaded so a repeat render with the same model starts faster. Fresh
+installs choose the fleet-safe default from host memory: Macs below 12 GB use
+**Memory Saver** and unload after 2 idle minutes; larger Macs use **Balanced**
+and unload after 10 idle minutes. An explicitly saved operator choice always
+wins. **Performance** pins the model, while **Immediate** unloads after every
+completed render.
 
 Use **Release Memory / Unload Model** at any time the local queue is idle.
 Cleanup drops the pipeline and clears available MLX/Metal and PyTorch MPS
 allocator caches. Failed and cancelled local renders still unload immediately
-for safety. Cloud jobs, downloaded weights, uploads, and output videos are not
-affected.
+for safety. Downloaded weights, uploads, and output videos are not affected.
 
 ```text
 GET  /api/memory-policy
@@ -156,8 +157,8 @@ After Update and the next normal restart, Activity Monitor labels the backend
 
 Completed MP4s are temporary local backups. Automatic cleanup is enabled by
 default, keeps them for 30 days, and enforces an 80 GB hard cap by deleting
-the oldest completed clips first. Active jobs, models, source uploads,
-credentials, provider state, and settings are excluded.
+the oldest completed clips first. Active jobs, models, source uploads, the
+Hugging Face token, and settings are excluded.
 
 ```text
 GET  /api/storage-policy
@@ -186,7 +187,6 @@ fully downloaded before a generation job will run.
 | `POST` | `/api/generate/video2video` | start an image-to-video or video-to-video job (multipart) |
 | `GET` | `/api/generate/jobs` | list jobs |
 | `GET` | `/api/generate/jobs/{id}` | poll one job |
-| `POST` | `/api/generate/jobs/{id}/repair` | re-attach a saved cloud provider task without resubmitting |
 | `GET` | `/api/generate/jobs/{id}/video` | fetch the rendered mp4 |
 | `DELETE` | `/api/generate/jobs/{id}` | cancel a job |
 | `GET` | `/api/generate/stream` | SSE job progress |
@@ -240,10 +240,6 @@ while (!["done", "error", "cancelled"].includes(state)) {
 }
 console.log("video:", `${BASE}/api/generate/jobs/${id}/video`);
 
-// If a saved cloud poller ever stops, re-attach to its original provider task.
-// This does not submit another paid generation.
-await fetch(`${BASE}/api/generate/jobs/${id}/repair`, { method: "POST" });
-
 // Video-to-video (multipart): restyle an input clip
 const fd = new FormData();
 fd.append("file", inputClipBlob, "input.mp4");
@@ -277,9 +273,6 @@ while job["state"] not in ("done", "error", "cancelled"):
 if job["state"] == "done":
     mp4 = requests.get(f"{BASE}/api/generate/jobs/{job['id']}/video").content
     open("out.mp4", "wb").write(mp4)
-
-# Safe cloud repair: reuses the provider task ID already saved for this job.
-requests.post(f"{BASE}/api/generate/jobs/{job['id']}/repair")
 
 # Image-to-video (multipart)
 with open("frame.png", "rb") as f:
@@ -318,78 +311,6 @@ curl -s -X POST "$BASE/api/downloads" \
   -H 'Content-Type: application/json' \
   -d '{"repo":"zai-org/CogVideoX-2b"}'
 ```
-
----
-
-## Cloud video providers (gateway)
-
-Video Studio is also a **gateway** for cloud video generators. Link fal.ai,
-Kie.ai, or Replicate and its models appear in the **same**
-`/api/catalog` alongside local ones, with the same generation API — so a client
-like Story Studio connects **once** and gets local **and** cloud models, kept
-current as providers add/deprecate models. See `SPEC.md` for the full design.
-
-- **Link a provider:** Settings → *Cloud video providers* → paste your API key,
-  then enable **paid generation** (nothing bills until both are set).
-- **Spend guardrails:** set **per-provider and global** daily/monthly USD caps
-  (Settings → *Spend guardrails*). Caps reset on the calendar; a generation that
-  would exceed a cap is **blocked before it runs**. Every cloud job's cost is
-  recorded. The Generate tab shows the estimate before submit, and Settings
-  plots the last 14 days of spend by provider.
-- **Cloud controls:** filter ready models by capability, minimum duration, and
-  resolution, then set the selected model's duration, resolution, and aspect
-  ratio directly in Generate.
-- **Routing:** cloud models carry a `provider:` id (e.g.
-  `fal:fal-ai/kling-video/v2/master/text-to-video`). Generation goes through the
-  **same** endpoints; the gateway submits to the provider, polls, and downloads
-  the clip into `app/output/` — the job/SSE/`/video` lifecycle is identical to a
-  local render.
-- **Freshness + recovery:** provider catalogs refresh through a persistent TTL
-  cache. New models are marked, removed models remain visible as deprecated for
-  30 days. Each cloud job saves its intent before crossing the paid API boundary,
-  then saves the provider's task ID immediately when it is returned.
-  Timeouts and temporary network/result-download failures back off and keep
-  polling that same task indefinitely; they never submit or bill a replacement.
-  A watchdog re-attaches stopped pollers automatically after errors or app
-  restarts, and a **repair saved task** action is available for manual recovery.
-  If the initial submit response is lost before a task ID arrives, Video Studio
-  marks the outcome unknown and blocks further paid submissions to that provider
-  rather than guessing and risking duplicate credits.
-- **Price safety:** a cloud model without a verified price remains browseable,
-  but Video Studio refuses to submit it until a trustworthy price is configured.
-  Per-second estimates are reconciled from the downloaded MP4's actual duration;
-  fixed per-video prices remain exact.
-
-Provider/spend API:
-
-```bash
-BASE=http://localhost:47872
-
-# List providers (key-set state, paid toggle, model count, spend vs caps)
-curl -s "$BASE/api/providers"
-# Set a provider API key (owner-only; never returned)
-curl -s -X POST "$BASE/api/providers/fal/key"  -H 'Content-Type: application/json' -d '{"key":"YOUR_FAL_KEY"}'
-# Enable paid generation
-curl -s -X POST "$BASE/api/providers/fal/paid" -H 'Content-Type: application/json' -d '{"paid":true}'
-# Spend today/month vs caps + recent records + 14-day history
-curl -s "$BASE/api/spend"
-# Set caps (USD; 0 = no cap)
-curl -s -X POST "$BASE/api/spend/caps" -H 'Content-Type: application/json' \
-  -d '{"global":{"daily":20,"monthly":300},"per_provider":{"fal":{"daily":10,"monthly":150}}}'
-
-# Generate with a cloud model — same endpoint as local
-curl -s -X POST "$BASE/api/generate/txt2video" -H 'Content-Type: application/json' \
-  -d '{"repo":"fal:fal-ai/kling-video/v2/master/text-to-video","prompt":"a red kite over the sea","duration":5}'
-
-# Manually re-attach polling to the provider task already saved for a job.
-# This endpoint never creates a new provider task.
-curl -s -X POST "$BASE/api/generate/jobs/<JOB_ID>/repair"
-```
-
-> Curated model metadata lives in `app/backend/providers/*_models.json`.
-> Replicate augments its curated entries from its live text-to-video collection;
-> fal.ai and Kie.ai currently use the curated files because they do not expose a
-> suitable stable model-list endpoint for this gateway.
 
 ## Notes & limitations
 
