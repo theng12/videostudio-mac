@@ -19,6 +19,15 @@ def test_catalog_uses_current_loader_compatible_ltx_and_canonical_cog_ids():
     assert catalog.get_model("THUDM/CogVideoX-2b").repo == "zai-org/CogVideoX-2b"
 
 
+def test_engine_warning_waits_for_diagnostics():
+    root = Path(__file__).resolve().parents[2]
+    html = (root / "app/frontend/index.html").read_text()
+    javascript = (root / "app/frontend/app.js").read_text()
+
+    assert 'diag: { checked: false' in javascript
+    assert 'x-show="diag.checked && !gen.available"' in html
+
+
 def test_catalog_has_a_native_mlx_model_for_16_and_24_gb_macs():
     from backend import catalog
 

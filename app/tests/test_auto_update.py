@@ -12,7 +12,7 @@ from backend.auto_update import AutoUpdater, UpdateDeferred, UpdateError, _redac
 
 @pytest.fixture
 def updater(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AutoUpdater:
-    root = tmp_path / "voicestudio-mac.git"
+    root = tmp_path / "videostudio-mac"
     (root / ".git").mkdir(parents=True)
     (root / "app").mkdir()
     (root / "conda_env" / "bin").mkdir(parents=True)
@@ -21,11 +21,11 @@ def updater(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AutoUpdater:
     python = root / "conda_env" / "bin" / "python"
     python.symlink_to(sys.executable)
     spec = {
-        "root": str(root), "title": "Voice Studio KH", "slug": "voicestudio-test",
-        "expected_remote": "https://github.com/theng12/voicestudio-mac.git",
-        "branch": "main", "port": 47870, "default_hour": 2,
-        "server_label": "com.kh.voicestudio.server",
-        "watchdog_label": "com.kh.voicestudio.watchdog",
+        "root": str(root), "title": "Video Studio KH", "slug": "videostudio-test",
+        "expected_remote": "https://github.com/theng12/videostudio-mac.git",
+        "branch": "main", "port": 47872, "default_hour": 6,
+        "server_label": "com.kh.videostudio.server",
+        "watchdog_label": "com.kh.videostudio.watchdog",
     }
     item = AutoUpdater(spec)
     monkeypatch.setattr(item, "scheduler_status", lambda: {
@@ -42,14 +42,14 @@ def updater(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AutoUpdater:
 
 def _save(updater: AutoUpdater, mode: str) -> dict:
     return updater.save_settings({
-        "mode": mode, "frequency": "daily", "maintenance_hour": 2,
+        "mode": mode, "frequency": "daily", "maintenance_hour": 6,
         "idle_only": True,
     })
 
 
 def test_default_is_off_and_idle_only(updater: AutoUpdater):
     assert updater.settings() == {
-        "mode": "off", "frequency": "daily", "maintenance_hour": 2,
+        "mode": "off", "frequency": "daily", "maintenance_hour": 6,
         "idle_only": True, "weekday": 6,
     }
     assert updater.public_status()["scheduler"]["installed"] is False
@@ -66,7 +66,7 @@ def test_settings_modes_install_and_remove_schedule(updater: AutoUpdater):
 def test_invalid_settings_are_rejected(updater: AutoUpdater):
     with pytest.raises(UpdateError):
         updater.save_settings({"mode": "always", "frequency": "daily",
-                               "maintenance_hour": 2, "idle_only": True})
+                               "maintenance_hour": 6, "idle_only": True})
     with pytest.raises(UpdateError):
         updater.save_settings({"mode": "auto", "frequency": "daily",
                                "maintenance_hour": 24, "idle_only": True})
@@ -94,12 +94,12 @@ def test_auto_mode_installs_available_update(updater: AutoUpdater, monkeypatch):
 
 
 def test_active_work_defers_and_records_reason(updater: AutoUpdater, monkeypatch):
-    monkeypatch.setattr(updater, "readiness_reasons", lambda: ["voice generation is running"])
+    monkeypatch.setattr(updater, "readiness_reasons", lambda: ["video generation is running"])
     with pytest.raises(UpdateDeferred):
         updater.update(automatic=True)
     status = updater.public_status()
     assert status["state"] == "deferred"
-    assert "voice generation" in status["defer_reason"]
+    assert "video generation" in status["defer_reason"]
     assert status["next_retry"]
 
 
@@ -226,3 +226,14 @@ def test_build_suffix_version_matching(updater: AutoUpdater):
     assert updater._version_matches("1.22.0.abcdef0", "1.22.0")
     assert not updater._version_matches("1.21.9.abcdef0", "1.22.0")
 
+
+def test_stale_lower_version_is_not_advertised_as_an_update(updater: AutoUpdater):
+    updater._write_status(state="succeeded", latest_version="0.10.4")
+    assert updater.public_status()["update_available"] is False
+
+
+def test_update_availability_comes_from_git_state(updater: AutoUpdater):
+    updater._write_status(
+        state="available", latest_version="2.0.0", update_available=True,
+    )
+    assert updater.public_status()["update_available"] is True

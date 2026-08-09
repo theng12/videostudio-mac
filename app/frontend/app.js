@@ -16,7 +16,7 @@ function studio() {
     downloads: [],         // /api/downloads/stream snapshot
     genJobs: [],           // /api/generate/stream snapshot (newest first)
 
-    diag: { device: null, packages: [], engines: [], ready_count: 0, total_engines: 0 },
+    diag: { checked: false, device: null, packages: [], engines: [], ready_count: 0, total_engines: 0 },
 
     // hardware snapshot + RAM planner
     system: { chip: null, chip_tier: null, unified_memory_gb: null },
@@ -208,9 +208,11 @@ function studio() {
     async loadDiagnostics() {
       try {
         const d = await (await fetch("/api/generate/diagnostics")).json();
-        this.diag = d;
+        this.diag = { ...d, checked: true };
         this.gen.available = !!d.available;
-      } catch (_) {}
+      } catch (error) {
+        this.diag = { ...this.diag, checked: true, error: String(error) };
+      }
     },
 
     async loadSettings() {

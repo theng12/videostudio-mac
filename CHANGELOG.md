@@ -10,6 +10,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) with this project-
 
 ---
 
+## [0.11.1] — 2026-08-09
+
+### Fixed — truthful update and engine status
+
+- The update panel now uses the updater's verified Git state instead of
+  treating any unequal version strings as an update. A stale older release can
+  no longer be offered as though it were newer than the installed build.
+- The Generate view waits for diagnostics before showing the missing-engine
+  banner, eliminating a false installation warning during normal startup.
+- Corrected copied Voice Studio identities, port, service labels, and schedule
+  defaults in the updater tests so they exercise Video Studio's real contract.
+- Declared directly imported Pydantic and Starlette versions explicitly rather
+  than relying on FastAPI's transitive dependency graph.
+
+### Verification
+
+- Passed dependency checks, Python compilation, JavaScript and launcher syntax
+  checks, release metadata validation, the full backend test suite, live API
+  diagnostics, and rendered startup checks.
+
 ## [0.11.0] — 2026-08-09
 
 ### Changed — Video Studio is local-only

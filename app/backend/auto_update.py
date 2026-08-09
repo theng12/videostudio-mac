@@ -167,6 +167,7 @@ class AutoUpdater:
             "state": "idle", "last_checked": None, "latest_version": None,
             "next_check": None, "last_update_result": None, "defer_reason": None,
             "details": [], "rollback": None, "pending_manual": False,
+            "update_available": False,
         })
 
     def _write_status(self, **changes: object) -> dict:
@@ -198,12 +199,17 @@ class AutoUpdater:
         settings = self.settings()
         latest = status.get("latest_version")
         installed = self.installed_version()
+        available = status.get("update_available")
+        if available is None:
+            # Older status files inferred availability from unequal version
+            # strings, which could present a stale lower release as an update.
+            available = status.get("state") == "available" and latest != installed
         return {
             **status,
             "settings": settings,
             "installed_version": installed,
             "latest_version": latest,
-            "update_available": bool(latest and latest != installed),
+            "update_available": bool(available),
             "scheduler": self.scheduler_status(),
             "release_notes_url": self.release_notes_url(),
         }
@@ -359,6 +365,7 @@ class AutoUpdater:
             state = "available" if result["available"] else "succeeded"
             self._write_status(state=state, last_checked=_iso(self.now()),
                                latest_version=result["latest"],
+                               update_available=result["available"],
                                last_remote_commit=result["remote"],
                                last_update_result="Update available" if result["available"] else "Already up to date",
                                details=["Git remote, branch, worktree, and fast-forward safety checks passed."])
@@ -584,6 +591,7 @@ class AutoUpdater:
                 new_sha = preflight["remote"]
                 if not preflight["available"]:
                     self._write_status(state="succeeded", latest_version=preflight["latest"],
+                                       update_available=False,
                                        last_checked=_iso(self.now()), last_update_result="Already up to date",
                                        defer_reason=None, pending_manual=False)
                     return self.public_status()
@@ -600,6 +608,7 @@ class AutoUpdater:
                 if not self._verify_health(mode, preflight["latest"]):
                     raise UpdateError("The updated app did not become healthy on the expected version.")
                 self._write_status(state="succeeded", last_update_result=f"Updated to {preflight['latest']}",
+                                   update_available=False,
                                    rollback=None, pending_manual=False, next_retry=None,
                                    next_check=_iso(self._next_regular()),
                                    details=["Dependencies installed.", "Import check passed.",
@@ -706,4 +715,3 @@ def cli() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(cli())
-

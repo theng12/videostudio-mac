@@ -71,7 +71,7 @@
       </header>
 
       <!-- engine-not-installed banner -->
-      <div class="banner warn" x-show="!gen.available">
+      <div class="banner warn" x-show="diag.checked && !gen.available">
         <strong>Video engine not installed.</strong>
         Click <em>Install Generation</em> in the Pinokio sidebar to install MLX + PyTorch/Diffusers,
         then reload. You can still browse Models or start downloads.
