@@ -1009,6 +1009,7 @@ class VideoManager:
         if width % 16 or height % 16:
             raise ValueError("Width and height must both be divisible by 16.")
         estimated_working_bytes = width * height * frames * 16
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         free_bytes = shutil.disk_usage(OUTPUT_DIR).free
         if free_bytes < max(2_000_000_000, estimated_working_bytes * 2):
             raise RuntimeError("Not enough free disk space for this render and its temporary data.")
